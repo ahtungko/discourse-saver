@@ -108,32 +108,17 @@ const DEFAULT_CONFIG = {
   saveToYuque: false,
   yuqueToken: '',
   yuqueRepoNamespace: '',
-  yuqueDocPublic: 0
+  yuqueDocPublic: 0,
+
+  // 思源笔记设置
+  saveToSiyuan: false,
+  siyuanApiUrl: 'http://127.0.0.1:6806',
+  siyuanToken: '',
+  siyuanNotebook: '',
+  siyuanSavePath: '/Discourse收集箱'
 };
 
-// 折叠/展开面板
-function toggleSection(sectionId) {
-  const content = document.getElementById('content-' + sectionId);
-  const icon = document.getElementById('icon-' + sectionId);
-
-  if (content && icon) {
-    content.classList.toggle('expanded');
-    icon.classList.toggle('expanded');
-  }
-}
-
-// 展开所有面板
-function expandAllSections() {
-  const sections = ['pluginStatus', 'siteSettings', 'saveTarget', 'obsidianSettings', 'feishuSettings', 'notionSettings', 'contentSettings', 'commentSettings'];
-  sections.forEach(sectionId => {
-    const content = document.getElementById('content-' + sectionId);
-    const icon = document.getElementById('icon-' + sectionId);
-    if (content && icon) {
-      content.classList.add('expanded');
-      icon.classList.add('expanded');
-    }
-  });
-}
+// (已移除 toggleSection / expandAllSections 死代码 - HTML 中无对应元素)
 
 // 渲染自定义站点列表
 function renderCustomSites(sites) {
@@ -284,6 +269,13 @@ function loadOptions() {
     document.getElementById('yuqueRepoNamespace').value = config.yuqueRepoNamespace || '';
     document.getElementById('yuqueDocPublic').value = config.yuqueDocPublic || 0;
 
+    // 思源笔记设置
+    document.getElementById('saveToSiyuan').checked = config.saveToSiyuan;
+    document.getElementById('siyuanApiUrl').value = config.siyuanApiUrl || 'http://127.0.0.1:6806';
+    document.getElementById('siyuanToken').value = config.siyuanToken || '';
+    document.getElementById('siyuanNotebook').value = config.siyuanNotebook || '';
+    document.getElementById('siyuanSavePath').value = config.siyuanSavePath || '/Discourse收集箱';
+
     // 内容设置
     document.getElementById('addMetadata').checked = config.addMetadata;
     document.getElementById('includeImages').checked = config.includeImages;
@@ -320,9 +312,9 @@ function loadOptions() {
     updateImageSettingsVisibility(config.embedImages);
     updateFloorRangeVisibility(config.useFloorRange);
     updateYuqueOptionsVisibility(config.saveToYuque);
+    updateSiyuanOptionsVisibility(config.saveToSiyuan);
 
-    // 确保所有面板默认展开
-    expandAllSections();
+    // (已移除 expandAllSections 调用 - Tab 布局无需折叠展开)
     });
   });
 }
@@ -332,10 +324,11 @@ function updateObsidianSectionVisibility(enabled) {
   const section = document.getElementById('obsidianSection');
   if (section) {
     section.style.opacity = enabled ? '1' : '0.5';
-    const content = section.querySelector('.section-content');
-    if (content) {
-      content.style.pointerEvents = enabled ? 'auto' : 'none';
-    }
+    // 只禁用 input/select，保持测试连接和查看日志按钮可用
+    const inputs = section.querySelectorAll('input, select');
+    inputs.forEach(el => {
+      el.style.pointerEvents = enabled ? 'auto' : 'none';
+    });
   }
 }
 
@@ -344,20 +337,24 @@ function updateFeishuOptionsVisibility(enabled) {
   const feishuOptions = document.getElementById('feishuOptions');
   if (feishuOptions) {
     feishuOptions.style.opacity = enabled ? '1' : '0.5';
-    feishuOptions.style.pointerEvents = enabled ? 'auto' : 'none';
+    // 只禁用 input/select，保持测试连接按钮可用
+    const inputs = feishuOptions.querySelectorAll('input, select');
+    inputs.forEach(el => {
+      el.style.pointerEvents = enabled ? 'auto' : 'none';
+    });
   }
 }
 
 // 更新 Notion 区域可见性 (V4.0.1)
-// V4.0.2: 修复 - 控制整个 section 而不只是内部选项
 function updateNotionOptionsVisibility(enabled) {
   const section = document.getElementById('notionSection');
   if (section) {
     section.style.opacity = enabled ? '1' : '0.5';
-    const content = section.querySelector('.section-content');
-    if (content) {
-      content.style.pointerEvents = enabled ? 'auto' : 'none';
-    }
+    // 只禁用 input/select，保持测试连接按钮可用
+    const inputs = section.querySelectorAll('input, select');
+    inputs.forEach(el => {
+      el.style.pointerEvents = enabled ? 'auto' : 'none';
+    });
   }
 }
 
@@ -474,6 +471,13 @@ function saveOptions(e) {
     yuqueRepoNamespace: document.getElementById('yuqueRepoNamespace').value.trim(),
     yuqueDocPublic: parseInt(document.getElementById('yuqueDocPublic').value) || 0,
 
+    // 思源笔记设置
+    saveToSiyuan: document.getElementById('saveToSiyuan').checked,
+    siyuanApiUrl: document.getElementById('siyuanApiUrl').value.trim() || 'http://127.0.0.1:6806',
+    siyuanToken: document.getElementById('siyuanToken').value.trim(),
+    siyuanNotebook: document.getElementById('siyuanNotebook').value.trim(),
+    siyuanSavePath: document.getElementById('siyuanSavePath').value.trim() || '/Discourse收集箱',
+
     // 内容设置
     addMetadata: document.getElementById('addMetadata').checked,
     includeImages: document.getElementById('includeImages').checked,
@@ -502,7 +506,7 @@ function saveOptions(e) {
   };
 
   // 验证：插件启用时至少选择一个保存目标
-  if (config.pluginEnabled && !config.saveToObsidian && !config.saveToFeishu && !config.saveToNotion && !config.saveToYuque && !config.exportHtml) {
+  if (config.pluginEnabled && !config.saveToObsidian && !config.saveToFeishu && !config.saveToNotion && !config.saveToYuque && !config.saveToSiyuan && !config.exportHtml) {
     showStatus('请至少选择一个保存目标', 'error');
     return;
   }
@@ -553,6 +557,14 @@ function saveOptions(e) {
     }
   }
 
+  // 验证：如果启用思源，检查必填项
+  if (config.saveToSiyuan) {
+    if (!config.siyuanNotebook) {
+      showStatus('请填写思源笔记笔记本 ID（可先点测试连接查看列表）', 'error');
+      return;
+    }
+  }
+
   // V3.6.0: 验证图片嵌入需要 Advanced URI
   if (config.embedImages && config.saveToObsidian && !config.useAdvancedUri) {
     // 自动启用 Advanced URI
@@ -572,12 +584,13 @@ function saveOptions(e) {
 
 // 恢复默认（彻底清除所有数据，恢复到刚安装状态）
 function resetOptions() {
-  if (confirm('确定恢复默认设置？所有配置（飞书、Notion、语雀、自定义站点等）都会被清空，恢复到插件刚安装时的状态。')) {
-    // 先彻底清除 sync 和 local 存储
-    chrome.storage.sync.clear(() => {
-      chrome.storage.local.clear(() => {
-        // 再写入默认配置
-        chrome.storage.sync.set(DEFAULT_CONFIG, () => {
+  showConfirmDialog(
+    '确定恢复默认设置？所有配置（飞书、Notion、语雀、自定义站点等）都会被清空，恢复到插件刚安装时的状态。',
+    () => {
+      // 先写入默认配置（保证 pluginEnabled 始终有值，避免竞态条件）
+      chrome.storage.sync.set(DEFAULT_CONFIG, () => {
+        // 再清除 local 存储（日志、语言等设备数据）
+        chrome.storage.local.clear(() => {
           loadOptions();
           // 清空自定义站点列表UI
           const sitesList = document.getElementById('customSitesList');
@@ -585,8 +598,45 @@ function resetOptions() {
           showStatus('已恢复默认设置，所有数据已清除', 'success');
         });
       });
-    });
-  }
+    }
+  );
+}
+
+// 自定义确认弹窗（替代浏览器原生 confirm）
+function showConfirmDialog(message, onConfirm) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = 'background:var(--card-bg,#fff);border-radius:12px;padding:24px;max-width:400px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);';
+
+  const msg = document.createElement('p');
+  msg.textContent = message;
+  msg.style.cssText = 'margin:0 0 20px;font-size:14px;line-height:1.6;color:var(--text,#333);';
+
+  const btnGroup = document.createElement('div');
+  btnGroup.style.cssText = 'display:flex;gap:12px;justify-content:flex-end;';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = '取消';
+  cancelBtn.style.cssText = 'padding:8px 20px;border-radius:6px;border:1px solid var(--border,#ddd);background:var(--sub-bg,#f5f5f5);color:var(--text-secondary,#666);cursor:pointer;font-size:13px;';
+  cancelBtn.onclick = () => overlay.remove();
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.textContent = '确定';
+  confirmBtn.style.cssText = 'padding:8px 20px;border-radius:6px;border:none;background:#e74c3c;color:#fff;cursor:pointer;font-size:13px;font-weight:500;';
+  confirmBtn.onclick = () => {
+    overlay.remove();
+    onConfirm();
+  };
+
+  btnGroup.appendChild(cancelBtn);
+  btnGroup.appendChild(confirmBtn);
+  dialog.appendChild(msg);
+  dialog.appendChild(btnGroup);
+  overlay.appendChild(dialog);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
 }
 
 // 测试飞书连接
@@ -725,6 +775,125 @@ function updateDownloadImagesVisibility() {
   }
 }
 
+// 测试 Obsidian REST API 连接
+async function testRestApiConnection() {
+  const btn = document.getElementById('testRestApiBtn');
+  const originalText = btn.textContent;
+
+  btn.textContent = '测试中...';
+  btn.disabled = true;
+
+  const apiKey = document.getElementById('restApiKey').value.trim();
+  const apiPort = document.getElementById('restApiPort').value.trim() || '27124';
+
+  if (!apiKey) {
+    showStatus('请先填写 REST API Key', 'error');
+    btn.textContent = originalText;
+    btn.disabled = false;
+    return;
+  }
+
+  try {
+    const response = await fetch(`https://127.0.0.1:${apiPort}/`, {
+      method: 'GET',
+      headers: {
+        'Authorization': 'Bearer ' + apiKey
+      }
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      showStatus(`连接成功！Obsidian REST API 已就绪${data.service ? ' (' + data.service + ')' : ''}`, 'success');
+    } else if (response.status === 401 || response.status === 403) {
+      showStatus('API Key 无效，请检查后重试', 'error');
+    } else {
+      showStatus(`连接失败，HTTP ${response.status}`, 'error');
+    }
+  } catch (error) {
+    // REST API 默认使用 HTTPS 自签名证书，浏览器可能拒绝
+    // 尝试 HTTP 回退
+    try {
+      const response = await fetch(`http://127.0.0.1:${apiPort}/`, {
+        method: 'GET',
+        headers: {
+          'Authorization': 'Bearer ' + apiKey
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        showStatus(`连接成功！Obsidian REST API 已就绪${data.service ? ' (' + data.service + ')' : ''}`, 'success');
+      } else if (response.status === 401 || response.status === 403) {
+        showStatus('API Key 无效，请检查后重试', 'error');
+      } else {
+        showStatus(`连接失败，HTTP ${response.status}`, 'error');
+      }
+    } catch (err2) {
+      showStatus('无法连接到 Obsidian REST API。请确认：1) Obsidian 已打开 2) Local REST API 插件已启用 3) 端口号正确', 'error');
+    }
+  }
+
+  btn.textContent = originalText;
+  btn.disabled = false;
+}
+
+// 查看 Obsidian REST API 日志
+function showObsidianLogs() {
+  chrome.storage.local.get({ obsidianLogs: [] }, (result) => {
+    const logs = result.obsidianLogs || [];
+
+    if (logs.length === 0) {
+      showStatus('暂无日志记录。保存帖子（启用下载图片功能）后会自动生成日志。', 'info');
+      return;
+    }
+
+    // 创建日志弹窗
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+
+    const dialog = document.createElement('div');
+    dialog.style.cssText = 'background:var(--card-bg,#fff);border-radius:12px;padding:24px;max-width:600px;width:90%;max-height:70vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.2);';
+
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
+    header.innerHTML = '<h3 style="margin:0;font-size:16px;">下载日志</h3>';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '关闭';
+    closeBtn.style.cssText = 'background:#555;color:#fff;border:none;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:13px;';
+    closeBtn.onclick = () => overlay.remove();
+    header.appendChild(closeBtn);
+
+    const content = document.createElement('div');
+    content.style.cssText = 'overflow-y:auto;flex:1;font-size:13px;font-family:monospace;line-height:1.6;';
+
+    const logHtml = logs.slice(-50).reverse().map(log => {
+      const time = new Date(log.time).toLocaleString('zh-CN');
+      const icon = log.success ? '✅' : '❌';
+      return `<div style="padding:6px 0;border-bottom:1px solid var(--border,#eee);">${icon} <span style="color:#888;">${time}</span> ${log.file || ''} ${log.error ? '<span style="color:red;">' + log.error + '</span>' : ''}</div>`;
+    }).join('');
+
+    content.innerHTML = logHtml || '<p style="color:#888;">暂无日志</p>';
+
+    const clearBtn = document.createElement('button');
+    clearBtn.textContent = '清空日志';
+    clearBtn.style.cssText = 'margin-top:12px;background:#e74c3c;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;align-self:flex-start;';
+    clearBtn.onclick = () => {
+      chrome.storage.local.set({ obsidianLogs: [] }, () => {
+        content.innerHTML = '<p style="color:#888;">日志已清空</p>';
+        showStatus('日志已清空', 'success');
+      });
+    };
+
+    dialog.appendChild(header);
+    dialog.appendChild(content);
+    dialog.appendChild(clearBtn);
+    overlay.appendChild(dialog);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  });
+}
+
 // 更新语雀区域可见性
 function updateYuqueOptionsVisibility(enabled) {
   const section = document.getElementById('yuqueSection');
@@ -785,6 +954,96 @@ async function testYuqueConnection() {
   }
 }
 
+// 更新思源区域可见性
+function updateSiyuanOptionsVisibility(enabled) {
+  const section = document.getElementById('siyuanSection');
+  if (section) {
+    section.style.opacity = enabled ? '1' : '0.5';
+    const inputs = section.querySelectorAll('input, select, button');
+    inputs.forEach(el => {
+      if (!el.classList.contains('test-btn') && el.id !== 'testSiyuanBtn') {
+        el.style.pointerEvents = enabled ? 'auto' : 'none';
+      }
+    });
+  }
+}
+
+// 测试思源笔记连接
+async function testSiyuanConnection() {
+  const btn = document.getElementById('testSiyuanBtn');
+  const originalText = btn.textContent;
+
+  btn.textContent = '测试中...';
+  btn.disabled = true;
+
+  const apiUrl = (document.getElementById('siyuanApiUrl').value.trim() || 'http://127.0.0.1:6806').replace(/\/+$/, '');
+  const token = document.getElementById('siyuanToken').value.trim();
+  const notebookId = document.getElementById('siyuanNotebook').value.trim();
+
+  try {
+    // 测试版本接口
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = 'Token ' + token;
+
+    const versionResp = await fetch(apiUrl + '/api/system/version', {
+      method: 'POST',
+      headers: headers,
+      body: '{}'
+    });
+
+    if (!versionResp.ok) {
+      throw new Error('HTTP ' + versionResp.status);
+    }
+
+    const versionData = await versionResp.json();
+    if (versionData.code !== 0) {
+      throw new Error(versionData.msg || '连接失败');
+    }
+
+    let message = '连接成功！思源笔记版本: ' + versionData.data;
+
+    // 如果填了笔记本ID，验证是否存在
+    if (notebookId) {
+      const nbResp = await fetch(apiUrl + '/api/notebook/lsNotebooks', {
+        method: 'POST',
+        headers: headers,
+        body: '{}'
+      });
+      const nbData = await nbResp.json();
+      if (nbData.code === 0 && nbData.data && nbData.data.notebooks) {
+        const found = nbData.data.notebooks.find(nb => nb.id === notebookId);
+        if (found) {
+          message += ' | 笔记本: ' + found.name;
+        } else {
+          message += ' | 笔记本ID未找到，可用笔记本: ' +
+            nbData.data.notebooks.filter(nb => !nb.closed).map(nb => nb.name + '(' + nb.id + ')').join(', ');
+        }
+      }
+    } else {
+      // 没填笔记本ID，列出所有可用笔记本
+      const nbResp = await fetch(apiUrl + '/api/notebook/lsNotebooks', {
+        method: 'POST',
+        headers: headers,
+        body: '{}'
+      });
+      const nbData = await nbResp.json();
+      if (nbData.code === 0 && nbData.data && nbData.data.notebooks) {
+        const openNbs = nbData.data.notebooks.filter(nb => !nb.closed);
+        if (openNbs.length > 0) {
+          message += ' | 可用笔记本: ' + openNbs.map(nb => nb.name + '(' + nb.id + ')').join(', ');
+        }
+      }
+    }
+
+    showStatus(message, 'success');
+  } catch (error) {
+    showStatus('无法连接到思源笔记。请确认：1) 思源笔记已启动 2) API 地址正确 3) 授权码正确。错误: ' + error.message, 'error');
+  }
+
+  btn.textContent = originalText;
+  btn.disabled = false;
+}
+
 // 显示状态
 function showStatus(message, type) {
   const statusElement = document.getElementById('statusMessage');
@@ -819,14 +1078,6 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.classList.add('active');
       const panel = document.getElementById('tab-' + targetTab);
       if (panel) panel.classList.add('active');
-    });
-  });
-
-  // 绑定折叠/展开事件（使用事件监听器，避免 Chrome 扩展 CSP 限制）
-  document.querySelectorAll('.section-header[data-section]').forEach(header => {
-    header.addEventListener('click', () => {
-      const sectionId = header.getAttribute('data-section');
-      toggleSection(sectionId);
     });
   });
 
@@ -872,10 +1123,22 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('testYuqueBtn').addEventListener('click', testYuqueConnection);
 
+  // 思源笔记相关事件
+  document.getElementById('saveToSiyuan').addEventListener('change', (e) => {
+    updateSiyuanOptionsVisibility(e.target.checked);
+  });
+  document.getElementById('testSiyuanBtn').addEventListener('click', testSiyuanConnection);
+
   // 下载图片到Vault复选框
   document.getElementById('downloadImages').addEventListener('change', () => {
     updateDownloadImagesVisibility();
   });
+
+  // 测试 Obsidian REST API 连接
+  document.getElementById('testRestApiBtn').addEventListener('click', testRestApiConnection);
+
+  // 查看 Obsidian 下载日志
+  document.getElementById('showObsidianLogsBtn').addEventListener('click', showObsidianLogs);
 
   // 保存评论复选框控制子选项
   document.getElementById('saveComments').addEventListener('change', (e) => {
@@ -932,4 +1195,67 @@ document.addEventListener('DOMContentLoaded', () => {
       e.target.value = value;
     }
   });
+
+  // ==================== 主题切换 ====================
+  document.querySelectorAll('#themeToggle button[data-theme-val]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const theme = btn.getAttribute('data-theme-val');
+      document.querySelectorAll('#themeToggle button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      if (theme === 'auto') {
+        document.body.removeAttribute('data-theme');
+        localStorage.removeItem('ds-theme');
+      } else {
+        document.body.setAttribute('data-theme', theme);
+        localStorage.setItem('ds-theme', theme);
+      }
+    });
+  });
+
+  // 恢复保存的主题
+  const savedTheme = localStorage.getItem('ds-theme');
+  if (savedTheme) {
+    document.body.setAttribute('data-theme', savedTheme);
+    document.querySelectorAll('#themeToggle button').forEach(b => b.classList.remove('active'));
+    const activeBtn = document.querySelector(`#themeToggle button[data-theme-val="${savedTheme}"]`);
+    if (activeBtn) activeBtn.classList.add('active');
+  }
+
+  // ==================== 捐赠弹窗 ====================
+  const coffeeBtn = document.getElementById('coffeeBtn');
+  const donateOverlay = document.getElementById('donateOverlay');
+  const donateClose = document.getElementById('donateClose');
+
+  if (coffeeBtn && donateOverlay) {
+    coffeeBtn.addEventListener('click', () => {
+      donateOverlay.style.display = 'flex';
+    });
+
+    if (donateClose) {
+      donateClose.addEventListener('click', () => {
+        donateOverlay.style.display = 'none';
+      });
+    }
+
+    donateOverlay.addEventListener('click', (e) => {
+      if (e.target === donateOverlay) {
+        donateOverlay.style.display = 'none';
+      }
+    });
+
+    // 捐赠标签切换（微信/支付宝）
+    document.querySelectorAll('.donate-tab-btn[data-donate]').forEach(tabBtn => {
+      tabBtn.addEventListener('click', () => {
+        const target = tabBtn.getAttribute('data-donate');
+        document.querySelectorAll('.donate-tab-btn').forEach(b => {
+          b.classList.remove('active-wechat', 'active-alipay');
+        });
+        tabBtn.classList.add(target === 'wechat' ? 'active-wechat' : 'active-alipay');
+
+        document.getElementById('donate-wechat').style.display = target === 'wechat' ? 'block' : 'none';
+        document.getElementById('donate-alipay').style.display = target === 'alipay' ? 'block' : 'none';
+      });
+    });
+  }
 });

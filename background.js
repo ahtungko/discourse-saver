@@ -16,6 +16,11 @@
 // V4.2.6: 飞书HTML附件上传 + 大内容批处理优化
 // V4.3.5: 版本同步
 
+// 点击扩展图标时打开选项页
+chrome.action.onClicked.addListener(() => {
+  chrome.runtime.openOptionsPage();
+});
+
 // API 域名映射
 const API_DOMAINS = {
   feishu: 'https://open.feishu.cn',
@@ -2523,22 +2528,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           return;
         }
 
-        // 检查是否已经注入过（防止重复注入）
-        try {
-          const result = await chrome.scripting.executeScript({
-            target: { tabId },
-            func: () => window.__discourseSaverInjected
-          });
-
-          if (result[0]?.result === true) {
-            console.log('[Discourse Saver] 脚本已注入，跳过');
-            sendResponse({ success: true, skipped: true });
-            return;
-          }
-        } catch (checkError) {
-          // 忽略检查错误，继续注入
-          console.log('[Discourse Saver] 检查注入状态失败，继续注入');
-        }
+        // 防重复注入由 content.js 内部版本号检查负责
+        // 这里始终执行注入流程，确保扩展更新后旧页面也能正常工作
 
         // 注入 turndown 库
         await chrome.scripting.executeScript({
@@ -2560,12 +2551,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           files: ['content.js']
         });
         console.log('[Discourse Saver] content.js 注入成功');
-
-        // 标记已注入
-        await chrome.scripting.executeScript({
-          target: { tabId },
-          func: () => { window.__discourseSaverInjected = true; }
-        });
 
         sendResponse({ success: true });
       } catch (error) {
@@ -2864,6 +2849,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch(err => sendResponse({ error: err.message, results: [] }));
     return true;
   }
+
+  // ==================== 思源笔记 ====================
+  if (request.action === 'saveToSiyuan') {
+    const { config, data } = request;
+    saveToSiyuan(config, data)
+      .then(result => sendResponse({ success: true, message: '已保存到思源笔记', data: result }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (request.action === 'testSiyuanConnection') {
+    const { config } = request;
+    testSiyuanConnection(config)
+      .then(result => sendResponse(result))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
 });
 
 // ==================== 下载媒体到 Vault ====================
@@ -2943,6 +2945,19 @@ async function downloadMediaToVault(config, mediaUrls, vaultMediaPath, mediaFold
       });
     }
   }
+
+  // 将结果写入日志供选项页查看
+  const logEntries = results.map(r => ({
+    time: Date.now(),
+    file: r.localName || r.originalUrl,
+    success: r.success,
+    error: r.error || null
+  }));
+  chrome.storage.local.get({ obsidianLogs: [] }, (data) => {
+    const logs = (data.obsidianLogs || []).concat(logEntries);
+    // 只保留最近200条
+    chrome.storage.local.set({ obsidianLogs: logs.slice(-200) });
+  });
 
   return results;
 }
@@ -3167,4 +3182,118 @@ function getFieldTypeName(typeCode) {
   return typeNames[typeCode] || `未知类型(${typeCode})`;
 }
 
-console.log('[Discourse Saver] Background script 已加载 (V4.2.1)');
+// ==================== 思源笔记 API ====================
+
+async function saveToSiyuan(config, data) {
+  const apiUrl = (config.siyuanApiUrl || 'http://127.0.0.1:6806').replace(/\/+$/, '');
+  const token = config.siyuanToken || '';
+  const notebook = config.siyuanNotebook;
+  const rawPath = config.siyuanSavePath || '/Discourse收集箱';
+
+  if (!notebook) {
+    throw new Error('请先配置思源笔记笔记本 ID');
+  }
+
+  // 构建保存路径
+  let siteName = 'unknown';
+  try {
+    siteName = new URL(data.url).hostname.replace(/^www\./, '');
+  } catch (e) {}
+  const safeTitle = (data.title || 'Discourse-' + Date.now())
+    .replace(/[\/\\:*?"<>|]/g, '-')
+    .replace(/\s+/g, '-')
+    .substring(0, 80);
+
+  const basePath = rawPath.startsWith('/') ? rawPath : '/' + rawPath;
+  const fullPath = `${basePath}/${siteName}/${safeTitle}`;
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Token ${token}`;
+
+  // 创建文档
+  const createResp = await fetch(`${apiUrl}/api/filetree/createDocWithMd`, {
+    method: 'POST',
+    headers: headers,
+    body: JSON.stringify({
+      notebook: notebook,
+      path: fullPath,
+      markdown: data.markdown
+    })
+  });
+
+  const createData = await createResp.json();
+  if (createData.code !== 0) {
+    throw new Error(createData.msg || '创建文档失败');
+  }
+
+  // 设置文档属性
+  const docId = typeof createData.data === 'string' ? createData.data : (createData.data?.id || createData.data);
+  if (docId) {
+    try {
+      await fetch(`${apiUrl}/api/attr/setBlockAttrs`, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({
+          id: docId,
+          attrs: {
+            'custom-source-url': data.url || '',
+            'custom-author': data.author || '',
+            'custom-saved-by': 'Discourse Saver V5.3'
+          }
+        })
+      });
+    } catch (e) {
+      console.warn('[Discourse Saver] 设置思源文档属性失败:', e);
+    }
+  }
+
+  return createData.data;
+}
+
+async function testSiyuanConnection(config) {
+  const apiUrl = (config.siyuanApiUrl || 'http://127.0.0.1:6806').replace(/\/+$/, '');
+  const token = config.siyuanToken || '';
+  const notebookId = config.siyuanNotebook || '';
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Token ${token}`;
+
+  // 测试版本
+  const versionResp = await fetch(`${apiUrl}/api/system/version`, {
+    method: 'POST',
+    headers: headers,
+    body: '{}'
+  });
+  const versionData = await versionResp.json();
+  if (versionData.code !== 0) {
+    return { success: false, error: versionData.msg || '连接失败' };
+  }
+
+  let message = '连接成功！思源笔记版本: ' + versionData.data;
+
+  // 列出笔记本
+  const nbResp = await fetch(`${apiUrl}/api/notebook/lsNotebooks`, {
+    method: 'POST',
+    headers: headers,
+    body: '{}'
+  });
+  const nbData = await nbResp.json();
+
+  if (nbData.code === 0 && nbData.data && nbData.data.notebooks) {
+    const openNbs = nbData.data.notebooks.filter(nb => !nb.closed);
+    if (notebookId) {
+      const found = openNbs.find(nb => nb.id === notebookId);
+      if (found) {
+        message += ' | 笔记本: ' + found.name;
+      } else {
+        message += ' | 笔记本ID未找到，可用: ' + openNbs.map(nb => nb.name + '(' + nb.id + ')').join(', ');
+      }
+    } else if (openNbs.length > 0) {
+      message += ' | 可用笔记本: ' + openNbs.map(nb => nb.name + '(' + nb.id + ')').join(', ');
+    }
+  }
+
+  return { success: true, message: message };
+}
+
+console.log('[Discourse Saver] Background script 已加载 (V5.3)');

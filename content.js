@@ -33,6 +33,17 @@
 (function() {
   'use strict';
 
+  console.log('[Discourse Saver] content.js 开始执行，URL:', location.href);
+
+  // 防止重复执行（扩展重新加载后版本号会变，允许重新注入）
+  const CONTENT_SCRIPT_VERSION = '4.3.9';
+  if (window.__discourseSaverVersion === CONTENT_SCRIPT_VERSION) {
+    console.log('[Discourse Saver] content.js 已在运行（同版本），跳过');
+    return;
+  }
+  window.__discourseSaverVersion = CONTENT_SCRIPT_VERSION;
+  window.__discourseSaverInjected = true;
+
   // 默认配置
   const DEFAULT_CONFIG = {
     // V3.5.1: 插件总开关
@@ -101,7 +112,14 @@
     saveToYuque: false,
     yuqueToken: '',
     yuqueRepoNamespace: '',
-    yuqueDocPublic: 0
+    yuqueDocPublic: 0,
+
+    // 思源笔记设置
+    saveToSiyuan: false,
+    siyuanApiUrl: 'http://127.0.0.1:6806',
+    siyuanToken: '',
+    siyuanNotebook: '',
+    siyuanSavePath: '/Discourse收集箱'
   };
 
   // V4.2.3: Notion 属性的语言相关默认值
@@ -2075,6 +2093,44 @@ tags: [${tagsStr}]
         remoteSaveTasks.push(yuqueTask);
       }
 
+      // 思源笔记保存
+      const siyuanConfigComplete = config.saveToSiyuan &&
+        config.siyuanNotebook;
+
+      if (siyuanConfigComplete) {
+        let cleanSiyuanUrl = url.replace(/#.*$/, '').replace(/\?.*$/, '');
+        let siyuanUrl = cleanSiyuanUrl;
+        let siyuanTitle = title;
+
+        if (isSingleCommentMode) {
+          const match = cleanSiyuanUrl.match(/^(.*\/t\/[^/]+\/\d+)(\/\d+)?$/);
+          if (match) {
+            cleanSiyuanUrl = match[1];
+          }
+          siyuanUrl = `${cleanSiyuanUrl}/${targetPostNumber}`;
+          siyuanTitle = `${title} [${targetPostNumber}楼]`;
+        }
+
+        const siyuanTask = sendMessageAsync({
+          action: 'saveToSiyuan',
+          config: {
+            siyuanApiUrl: config.siyuanApiUrl || 'http://127.0.0.1:6806',
+            siyuanToken: config.siyuanToken || '',
+            siyuanNotebook: config.siyuanNotebook,
+            siyuanSavePath: config.siyuanSavePath || '/Discourse收集箱'
+          },
+          data: {
+            title: siyuanTitle,
+            url: siyuanUrl,
+            markdown: markdown,
+            author: author,
+            commentCount: comments.length
+          }
+        }).then(response => ({ target: 'siyuan', response }));
+
+        remoteSaveTasks.push(siyuanTask);
+      }
+
       // 并行执行所有远程保存任务
       if (remoteSaveTasks.length > 0) {
         Promise.allSettled(remoteSaveTasks).then(results => {
@@ -2106,6 +2162,13 @@ tags: [${tagsStr}]
                   console.error('[Discourse Saver→语雀] 保存失败:', response?.error);
                   showNotification('语雀保存失败: ' + (response?.error || '未知错误'), 'error');
                 }
+              } else if (target === 'siyuan') {
+                if (response && response.success) {
+                  showNotification('思源笔记保存成功', 'success');
+                } else {
+                  console.error('[Discourse Saver→思源] 保存失败:', response?.error);
+                  showNotification('思源笔记保存失败: ' + (response?.error || '未知错误'), 'error');
+                }
               }
             } else {
               // Promise rejected（理论上不会发生，因为 sendMessageAsync 总是 resolve）
@@ -2117,7 +2180,7 @@ tags: [${tagsStr}]
 
       // V4.0.1: 如果所有保存目标都没有启用，提示用户
       // V4.2.6: 增加 exportHtml 为有效保存目标
-      if (!shouldSaveToObsidian && !feishuConfigComplete && !notionConfigComplete && !yuqueConfigComplete && !config.exportHtml) {
+      if (!shouldSaveToObsidian && !feishuConfigComplete && !notionConfigComplete && !yuqueConfigComplete && !siyuanConfigComplete && !config.exportHtml) {
         showNotification('请在设置中至少启用一个保存目标', 'warning');
       }
 
@@ -3846,11 +3909,23 @@ tags: [${tagsStr}]
     console.log('[Discourse Saver] 插件已加载 (V3.6.0)');
   }
 
-  // 页面加载完成后初始化
+  // 页面加载完成后初始化（带重试，防止 SPA 渲染延迟导致检测失败）
+  async function initWithRetry(retries = 5, delay = 500) {
+    for (let i = 0; i < retries; i++) {
+      await init();
+      if (pluginInitialized) return; // 初始化成功
+      // 等待后重试（页面可能还在渲染）
+      await new Promise(r => setTimeout(r, delay));
+    }
+    console.log('[Discourse Saver] 多次重试后仍未初始化（可能非帖子页面）');
+  }
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', () => {
+      initWithRetry().catch(err => console.error('[Discourse Saver] initWithRetry 异常:', err));
+    });
   } else {
-    init();
+    initWithRetry().catch(err => console.error('[Discourse Saver] initWithRetry 异常:', err));
   }
 
   // 监听页面导航（单页应用）
