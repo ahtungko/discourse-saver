@@ -171,11 +171,26 @@
     return el.getAttribute('class') || '';
   }
 
-  // 检查是否在帖子页面
+  // 检查是否在帖子页面（多种选择器降级匹配不同版本 Discourse）
   function isTopicPage() {
-    return document.querySelector('#topic-title h1') !== null;
+    const selectors = [
+      '#topic-title h1',           // 标准 Discourse
+      '#topic-title',              // 无 h1 的变体
+      '.topic-header',             // 某些主题
+      '.fancy-title',              // LinuxDo 等
+      'h1[data-topic-id]',         // 带 topic-id 属性的 h1
+      '.topic-body',               // 帖子正文区域
+      '.post-stream',              // 帖子流
+    ];
+    for (const sel of selectors) {
+      if (document.querySelector(sel)) return true;
+    }
+    // 兜底：URL 匹配 /t/ 模式（Discourse 标准帖子 URL）
+    if (/\/t\/[^/]+\/\d+/.test(location.pathname)) return true;
+    return false;
   }
 
+  // 三级降级检测链接按钮
   function isLinkButton(element) {
     if (!element) return { isLink: false, postNumber: null };
 
@@ -184,65 +199,65 @@
       return { isLink: false, postNumber: null };
     }
 
-    // 核心检测：必须在帖子容器内（主帖或评论）
-    const postContainer = element.closest('.topic-post, article[data-post-id]');
-    if (!postContainer) {
-      return { isLink: false, postNumber: null };
-    }
-
-    // 必须在帖子操作区域内
-    const controlsArea = element.closest('.post-controls, .post-menu-area, .actions, nav.post-controls');
-    if (!controlsArea) {
-      return { isLink: false, postNumber: null };
-    }
-
-    // 收集元素属性用于检测
+    // 收集元素属性
     const className = safeClassName(element);
     const dataShareUrl = element.getAttribute('data-share-url');
     const title = (element.title || '').toLowerCase();
     const ariaLabel = (element.getAttribute('aria-label') || '').toLowerCase();
 
-    // 检测特征
-    const hasCopyLinkClass = className.includes('post-action-menu__copy-link') ||
-                              className.includes('copy-link');
-    const hasShareUrl = dataShareUrl !== null && dataShareUrl !== '';
-    const hasShareClass = className.includes('share');
-    const hasLinkTitle = title.includes('链接') || title.includes('复制') ||
-                         title.includes('copy') || title.includes('share') ||
-                         title.includes('剪贴板');
-    const hasLinkAria = ariaLabel.includes('链接') || ariaLabel.includes('复制') ||
-                        ariaLabel.includes('分享') || ariaLabel.includes('share') ||
-                        ariaLabel.includes('copy');
-
-    // SVG 图标特征检测（Discourse 用 d-icon-d-post-share / d-icon-link 等）
-    const svg = element.querySelector('svg') || (element.tagName === 'svg' ? element : null);
-    let hasSvgShareIcon = false;
+    // SVG 图标特征
+    const svg = element.querySelector('svg') || (element.tagName?.toLowerCase() === 'svg' ? element : null);
+    let svgHint = '';
     if (svg) {
-      const svgClass = safeClassName(svg);
-      const useHref = svg.querySelector('use')?.getAttribute('href') ||
-                      svg.querySelector('use')?.getAttribute('xlink:href') || '';
-      hasSvgShareIcon = svgClass.includes('d-post-share') || svgClass.includes('d-icon-link') ||
-                        svgClass.includes('share') || svgClass.includes('link') ||
-                        useHref.includes('share') || useHref.includes('link') ||
-                        useHref.includes('copy');
+      svgHint = safeClassName(svg) + ' ' +
+                (svg.querySelector('use')?.getAttribute('href') || '') + ' ' +
+                (svg.querySelector('use')?.getAttribute('xlink:href') || '');
     }
 
-    const isLinkLike = hasCopyLinkClass || hasShareUrl || hasShareClass ||
-                       hasLinkTitle || hasLinkAria || hasSvgShareIcon;
+    // ========== 第一级：精确 class 匹配（最可靠） ==========
+    const level1 = className.includes('post-action-menu__copy-link');
 
-    if (!isLinkLike) {
+    // ========== 第二级：属性 + 结构匹配 ==========
+    const hasShareUrl = !!dataShareUrl;
+    const hasCopyLinkClass = className.includes('copy-link') || className.includes('share');
+    const hasLinkTitle = title.includes('链接') || title.includes('复制') ||
+                         title.includes('copy') || title.includes('share') ||
+                         title.includes('剪贴板') || title.includes('clipboard');
+    const hasLinkAria = ariaLabel.includes('链接') || ariaLabel.includes('复制') ||
+                        ariaLabel.includes('分享') || ariaLabel.includes('share') ||
+                        ariaLabel.includes('copy') || ariaLabel.includes('clipboard');
+    const level2 = hasShareUrl || hasCopyLinkClass || hasLinkTitle || hasLinkAria;
+
+    // ========== 第三级：SVG 图标特征（兜底） ==========
+    const level3 = /d-post-share|d-icon-link|share|copy-link|clipboard/.test(svgHint);
+
+    // 必须命中至少一级
+    const hitLevel = level1 ? 1 : (level2 ? 2 : (level3 ? 3 : 0));
+    if (hitLevel === 0) {
+      return { isLink: false, postNumber: null };
+    }
+
+    // 位置验证（第一级精确匹配可以放宽位置要求）
+    const postContainer = element.closest('.topic-post, article[data-post-id], .boxed, .container');
+    const controlsArea = element.closest('.post-controls, .post-menu-area, .actions, nav.post-controls, .post-actions, .discourse-reactions-actions');
+
+    if (hitLevel >= 2 && !postContainer) {
+      // 第二、三级需要在帖子容器内
+      return { isLink: false, postNumber: null };
+    }
+    if (hitLevel === 3 && !controlsArea) {
+      // 第三级还需要在操作区域内（最严格的位置约束）
       return { isLink: false, postNumber: null };
     }
 
     // 获取楼层号
     const topicPost = element.closest('.topic-post');
     const postNumber = topicPost?.getAttribute('data-post-number') ||
-                       postContainer.getAttribute('data-post-number') ||
-                       postContainer.querySelector('[data-post-number]')?.getAttribute('data-post-number') ||
+                       postContainer?.getAttribute('data-post-number') ||
+                       postContainer?.querySelector('[data-post-number]')?.getAttribute('data-post-number') ||
                        '1';
 
-    console.log('[Discourse Saver] 检测到链接按钮，楼层:', postNumber,
-                '特征:', { hasCopyLinkClass, hasShareUrl, hasShareClass, hasLinkTitle, hasLinkAria, hasSvgShareIcon });
+    console.log('[Discourse Saver] 检测到链接按钮 (L' + hitLevel + ')，楼层:', postNumber);
     return { isLink: true, postNumber: postNumber };
   }
 
