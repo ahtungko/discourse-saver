@@ -36,7 +36,7 @@
   console.log('[Discourse Saver] content.js 开始执行，URL:', location.href);
 
   // 防止重复执行（扩展重新加载后版本号会变，允许重新注入）
-  const CONTENT_SCRIPT_VERSION = '4.3.10';
+  const CONTENT_SCRIPT_VERSION = '4.3.11';
   if (window.__discourseSaverVersion === CONTENT_SCRIPT_VERSION) {
     console.log('[Discourse Saver] content.js 已在运行（同版本），跳过');
     return;
@@ -169,6 +169,13 @@
     });
   }
 
+  // 发送运行日志到 background（静默失败，不影响主流程）
+  function rlog(level, message) {
+    try {
+      chrome.runtime.sendMessage({ action: 'log', level, source: 'content', message });
+    } catch (_) { /* 扩展上下文失效时忽略 */ }
+  }
+
   // 安全获取 className（SVG 元素的 className 是 SVGAnimatedString 对象，不是字符串）
   function safeClassName(el) {
     if (!el) return '';
@@ -201,6 +208,7 @@
 
     // 必须在帖子页面上
     if (!isTopicPage()) {
+      rlog('DEBUG', 'isLinkButton: 非帖子页面，跳过');
       return { isLink: false, postNumber: null };
     }
 
@@ -247,11 +255,9 @@
     const controlsArea = element.closest('.post-controls, .post-menu-area, .actions, nav.post-controls, .post-actions, .discourse-reactions-actions');
 
     if (hitLevel >= 2 && !postContainer) {
-      // 第二、三级需要在帖子容器内
       return { isLink: false, postNumber: null };
     }
     if (hitLevel === 3 && !controlsArea) {
-      // 第三级还需要在操作区域内（最严格的位置约束）
       return { isLink: false, postNumber: null };
     }
 
@@ -263,6 +269,7 @@
                        '1';
 
     console.log('[Discourse Saver] 检测到链接按钮 (L' + hitLevel + ')，楼层:', postNumber);
+    rlog('INFO', '检测到链接按钮 L' + hitLevel + ' 楼层:' + postNumber);
     return { isLink: true, postNumber: postNumber };
   }
 
@@ -293,16 +300,8 @@
           target = e.target.closest('a');
         }
 
-        if (!target) return; // 不是按钮/链接点击，直接放行
-
-        // 诊断日志：只在帖子操作区域内的按钮才输出（避免刷屏）
-        const inControls = target.closest('.post-controls, .post-menu-area, nav.post-controls');
-        if (inControls) {
-          const cls = (typeof target.className === 'string') ? target.className : (target.getAttribute('class') || '');
-          console.log('[Discourse Saver] 捕获到操作区点击，target:', target.tagName,
-                      'class:', cls.substring(0, 80),
-                      'title:', (target.title || '').substring(0, 40));
-        }
+        if (!target) return;
+        rlog('DEBUG', '点击捕获: ' + target.tagName + ' class=' + safeClassName(target).substring(0, 60));
 
         // bypass 标记放行
         if (target.hasAttribute('data-linuxdo-obsidian-bypass')) {
@@ -313,65 +312,70 @@
         const linkResult = isLinkButton(target);
 
         if (target && linkResult.isLink) {
-          e.preventDefault();
-          e.stopPropagation();
-          e.stopImmediatePropagation();
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
 
-          // V3.5.3.1: 检查是否点击的是同一个按钮（通过楼层号判断）
-          const isSameButton = lastLinkPostNumber === linkResult.postNumber;
+        // V3.5.3.1: 检查是否点击的是同一个按钮（通过楼层号判断）
+        const isSameButton = lastLinkPostNumber === linkResult.postNumber;
 
-          if (isSameButton) {
-            linkClickCount++;
-          } else {
-            // 点击了不同的链接按钮，重置计数
-            if (linkClickTimer) {
-              clearTimeout(linkClickTimer);
-              linkClickTimer = null;
-            }
-            linkClickCount = 1;
-          }
-
-          lastLinkTarget = target;
-          lastLinkPostNumber = linkResult.postNumber;
-
-          // 清除之前的定时器
+        if (isSameButton) {
+          linkClickCount++;
+        } else {
+          // 点击了不同的链接按钮，重置计数
           if (linkClickTimer) {
             clearTimeout(linkClickTimer);
+            linkClickTimer = null;
           }
+          linkClickCount = 1;
+        }
 
-          if (linkClickCount === 2 && isSameButton) {
-            // 双击同一个按钮：触发原生复制链接
-            console.log('[Discourse Saver] 双击检测，触发原生复制链接，楼层:', linkResult.postNumber);
+        lastLinkTarget = target;
+        lastLinkPostNumber = linkResult.postNumber;
+
+        // 清除之前的定时器
+        if (linkClickTimer) {
+          clearTimeout(linkClickTimer);
+        }
+
+        if (linkClickCount === 2 && isSameButton) {
+          // 双击同一个按钮：触发原生复制链接
+          console.log('[Discourse Saver] 双击检测，触发原生复制链接，楼层:', linkResult.postNumber);
+          rlog('INFO', '双击触发原生复制链接 楼层:' + linkResult.postNumber);
+          linkClickCount = 0;
+          lastLinkPostNumber = null;
+          triggerOriginalCopyLink(target);
+        } else {
+          // 等待300ms判断是否为双击
+          const postNumber = linkResult.postNumber;
+          linkClickTimer = setTimeout(() => {
+            if (linkClickCount === 1) {
+              // 单击：保存到Obsidian
+              if (postNumber === '1') {
+                console.log('[Discourse Saver] 单击主帖链接按钮，保存整个帖子');
+                rlog('INFO', '单击保存主帖');
+                saveToObsidian(null); // 主帖：按原逻辑保存
+              } else {
+                console.log('[Discourse Saver] 单击评论链接按钮，保存主帖+第' + postNumber + '楼评论');
+                rlog('INFO', '单击保存评论 楼层:' + postNumber);
+                saveToObsidian(postNumber); // 评论：保存主帖+该评论
+              }
+            }
             linkClickCount = 0;
             lastLinkPostNumber = null;
-            triggerOriginalCopyLink(target);
-          } else {
-            // 等待300ms判断是否为双击
-            const postNumber = linkResult.postNumber;
-            linkClickTimer = setTimeout(() => {
-              if (linkClickCount === 1) {
-                // 单击：保存到Obsidian
-                if (postNumber === '1') {
-                  console.log('[Discourse Saver] 单击主帖链接按钮，保存整个帖子');
-                  saveToObsidian(null); // 主帖：按原逻辑保存
-                } else {
-                  console.log('[Discourse Saver] 单击评论链接按钮，保存主帖+第' + postNumber + '楼评论');
-                  saveToObsidian(postNumber); // 评论：保存主帖+该评论
-                }
-              }
-              linkClickCount = 0;
-              lastLinkPostNumber = null;
-            }, 300);
-          }
-
-          return false;
+          }, 300);
         }
+
+        return false;
+      }
       } catch (err) {
-        console.error('[Discourse Saver] 点击事件处理异常:', err);
+        console.error('[Discourse Saver] 链接按钮处理异常:', err);
+        rlog('ERROR', '链接按钮处理异常: ' + err.message);
       }
     }, true);
 
     console.log('[Discourse Saver] 链接按钮劫持已激活 (V3.6.0)');
+    rlog('INFO', '链接按钮劫持已激活');
   }
 
   // V3.5.7: 触发原生复制链接功能
@@ -1467,6 +1471,7 @@
         console.log(`[Discourse Saver] 媒体下载完成: ${successCount}/${mediaUrls.length} 成功`);
         if (successCount > 0) {
           showNotification(`已下载 ${successCount}/${mediaUrls.length} 个媒体文件到 Vault`, 'success');
+          rlog('INFO', '媒体文件已下载: ' + successCount + '/' + mediaUrls.length + ' 到 Vault');
         }
         return processedMarkdown;
       }
@@ -1476,6 +1481,68 @@
     }
 
     return markdown;
+  }
+
+  // V5.3: 后台静默下载媒体（fire-and-forget，不阻塞保存）
+  function fireAndForgetMediaDownload(markdown, config) {
+    const mediaFolderName = config.mediaFolderName || 'media';
+    const includeVideos = config.downloadVideos !== false;
+
+    // 收集媒体URL
+    const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+    const mediaUrls = [];
+    let match;
+    while ((match = imageRegex.exec(markdown)) !== null) {
+      const url = match[2];
+      if (url && !url.startsWith('data:')) {
+        mediaUrls.push({ url, type: 'image' });
+      }
+    }
+    if (includeVideos) {
+      const videoRegex = /(?:^|\n)(?:https?:\/\/[^\s]+\.(?:mp4|webm|mov|avi)(?:\?[^\s]*)?)/gim;
+      let videoMatch;
+      while ((videoMatch = videoRegex.exec(markdown)) !== null) {
+        mediaUrls.push({ url: videoMatch[0].trim(), type: 'video' });
+      }
+    }
+
+    if (mediaUrls.length === 0) return;
+
+    const siteFolderPath = config.folderPath || '';
+    const vaultMediaPath = siteFolderPath ? `${siteFolderPath}/${mediaFolderName}` : mediaFolderName;
+
+    console.log(`[Discourse Saver] 后台静默下载 ${mediaUrls.length} 个媒体文件...`);
+
+    // 发送到 background.js，不等待结果
+    try {
+      chrome.runtime.sendMessage({
+        action: 'downloadMediaToVault',
+        config: {
+          restApiKey: config.restApiKey,
+          restApiPort: config.restApiPort || 27124
+        },
+        mediaUrls: mediaUrls,
+        vaultMediaPath: vaultMediaPath,
+        mediaFolderName: mediaFolderName
+      }, (response) => {
+        // 静默处理结果，只写日志
+        if (chrome.runtime.lastError) {
+          console.warn('[Discourse Saver] 后台媒体下载通信失败:', chrome.runtime.lastError.message);
+          rlog('WARN', '后台媒体下载通信失败: ' + chrome.runtime.lastError.message);
+          return;
+        }
+        if (response && response.results) {
+          const successCount = response.results.filter(r => r.success).length;
+          console.log(`[Discourse Saver] 后台媒体下载完成: ${successCount}/${mediaUrls.length}`);
+          rlog('INFO', `运行成功，媒体文件已下载到Vault: ${successCount}/${mediaUrls.length}个`);
+        } else if (response && response.error) {
+          rlog('WARN', '后台媒体下载失败: ' + response.error);
+        }
+      });
+    } catch (err) {
+      console.warn('[Discourse Saver] 后台媒体下载异常:', err);
+      rlog('ERROR', '后台媒体下载异常: ' + err.message);
+    }
   }
 
   // 处理 Markdown 中的所有图片，转换为 Base64
@@ -1806,10 +1873,15 @@ tags: [${tagsStr}]
         effectiveConfig
       );
 
-      // V5.3: 下载图片/视频到Vault（通过 Obsidian Local REST API）
+      // V5.3: 后台静默下载媒体到Vault（不阻塞保存流程）
+      console.log('[Discourse Saver] 媒体下载检查: downloadImages=' + config.downloadImages + ', restApiKey=' + (config.restApiKey ? '已设置(' + config.restApiKey.length + '字符)' : '未设置'));
       if (config.downloadImages && config.restApiKey) {
-        showNotification('正在下载媒体文件到 Vault...', 'info');
-        markdown = await downloadAndReplaceMedia(markdown, config);
+        rlog('INFO', '后台下载媒体到Vault, port=' + (config.restApiPort || 27124));
+        // 不 await，后台静默下载，不阻塞保存
+        fireAndForgetMediaDownload(markdown, config);
+      } else if (config.downloadImages && !config.restApiKey) {
+        console.warn('[Discourse Saver] 已勾选下载媒体但未填写 REST API Key');
+        rlog('WARN', '媒体下载跳过: 未填写 REST API Key');
       }
       // V3.6.0: 处理图片嵌入（Base64）— 与downloadImages互斥
       else if (config.embedImages) {
@@ -1875,6 +1947,7 @@ tags: [${tagsStr}]
             // 单条评论模式
             msg = `已保存主帖+第${targetPostNumber}楼评论`;
             showNotification(msg, 'success');
+            rlog('INFO', '运行成功，帖子已保存到 Obsidian: ' + filePath + ' (评论#' + targetPostNumber + ')');
           } else if (config.saveComments && comments.length > 0) {
             if (comments.length < config.commentCount) {
               msg = `已保存（获取到${comments.length}条评论，如需更多请先滚动页面加载）`;
@@ -1883,10 +1956,13 @@ tags: [${tagsStr}]
               msg = `已保存到Obsidian（含${comments.length}条评论）`;
               showNotification(msg, 'success');
             }
+            rlog('INFO', '运行成功，帖子已保存到 Obsidian: ' + filePath + ' (' + comments.length + '条评论)');
           } else if (config.saveComments && comments.length === 0) {
             showNotification('已保存到Obsidian（未找到评论）', 'info');
+            rlog('INFO', '运行成功，帖子已保存到 Obsidian: ' + filePath + ' (无评论)');
           } else {
             showNotification('已保存到Obsidian', 'success');
+            rlog('INFO', '运行成功，帖子已保存到 Obsidian: ' + filePath);
           }
         } catch (clipboardError) {
           console.error('[Discourse Saver] 剪贴板写入失败:', clipboardError);
@@ -1906,6 +1982,7 @@ tags: [${tagsStr}]
           // 单条评论模式
           msg = `已保存主帖+第${targetPostNumber}楼评论`;
           showNotification(msg, 'success');
+          rlog('INFO', '运行成功，帖子已保存到 Obsidian: ' + filePath + ' (评论#' + targetPostNumber + ')');
         } else if (config.saveComments && comments.length > 0) {
           if (comments.length < config.commentCount) {
             msg = `已保存（获取到${comments.length}条评论，如需更多请先滚动页面加载）`;
@@ -1914,10 +1991,13 @@ tags: [${tagsStr}]
             msg = `已保存到Obsidian（含${comments.length}条评论）`;
             showNotification(msg, 'success');
           }
+          rlog('INFO', '运行成功，帖子已保存到 Obsidian: ' + filePath + ' (' + comments.length + '条评论)');
         } else if (config.saveComments && comments.length === 0) {
           showNotification('已保存到Obsidian（未找到评论）', 'info');
+          rlog('INFO', '运行成功，帖子已保存到 Obsidian: ' + filePath + ' (无评论)');
         } else {
           showNotification('已保存到Obsidian', 'success');
+          rlog('INFO', '运行成功，帖子已保存到 Obsidian: ' + filePath);
         }
       }
 
@@ -1964,6 +2044,7 @@ tags: [${tagsStr}]
                   if (response?.success) {
                     showNotification('HTML 文件已导出', 'success');
                     console.log('[Discourse Saver] HTML 文件导出成功');
+                    rlog('INFO', '运行成功，HTML文件已导出: ' + fullFileName);
                   } else {
                     showNotification('HTML 导出失败: ' + (response?.error || '未知错误'), 'error');
                     console.error('[Discourse Saver] HTML 导出失败:', response?.error);
@@ -2200,6 +2281,7 @@ tags: [${tagsStr}]
                 if (response && response.success) {
                   const actionText = response.action === 'updated' ? '已更新' : '已保存';
                   showNotification(`飞书${actionText}成功`, 'success');
+                  rlog('INFO', '运行成功，帖子已保存到飞书 (' + actionText + ')');
                 } else {
                   console.error('[Discourse Saver→飞书] 保存失败:', response?.error);
                   showNotification('飞书保存失败: ' + (response?.error || '未知错误'), 'error');
@@ -2208,6 +2290,7 @@ tags: [${tagsStr}]
                 if (response && response.success) {
                   const actionText = response.action === 'updated' ? '已更新' : '已保存';
                   showNotification(`Notion ${actionText}成功`, 'success');
+                  rlog('INFO', '运行成功，帖子已保存到 Notion (' + actionText + ')');
                 } else {
                   console.error('[Discourse Saver→Notion] 保存失败:', response?.error);
                   showNotification('Notion 保存失败: ' + (response?.error || '未知错误'), 'error');
@@ -2216,6 +2299,7 @@ tags: [${tagsStr}]
                 if (response && response.success) {
                   const actionText = response.action === 'updated' ? '已更新' : '已保存';
                   showNotification(`语雀${actionText}成功`, 'success');
+                  rlog('INFO', '运行成功，帖子已保存到语雀 (' + actionText + ')');
                 } else {
                   console.error('[Discourse Saver→语雀] 保存失败:', response?.error);
                   showNotification('语雀保存失败: ' + (response?.error || '未知错误'), 'error');
@@ -2223,6 +2307,7 @@ tags: [${tagsStr}]
               } else if (target === 'siyuan') {
                 if (response && response.success) {
                   showNotification('思源笔记保存成功', 'success');
+                  rlog('INFO', '运行成功，帖子已保存到思源笔记');
                 } else {
                   console.error('[Discourse Saver→思源] 保存失败:', response?.error);
                   showNotification('思源笔记保存失败: ' + (response?.error || '未知错误'), 'error');
@@ -2366,6 +2451,7 @@ tags: [${tagsStr}]
       try {
         await navigator.clipboard.writeText(markdown);
         showNotification(`已复制到剪贴板（${commentCount}条评论）`, 'success');
+        rlog('INFO', '运行成功，帖子已复制到剪贴板 (' + commentCount + '条评论)');
         overlay.remove();
       } catch (err) {
         showNotification('复制失败: ' + err.message, 'error');
@@ -3950,12 +4036,14 @@ tags: [${tagsStr}]
     }
     if (!config.pluginEnabled) {
       console.log('[Discourse Saver] 插件已禁用');
+      rlog('INFO', '插件已禁用');
       return;
     }
 
     // 检查是否是帖子页面
     if (!isTopicPage()) {
       console.log('[Discourse Saver] 非帖子页面，跳过初始化');
+      rlog('DEBUG', '非帖子页面: ' + location.pathname.substring(0, 60));
       return;
     }
 
@@ -3973,63 +4061,54 @@ tags: [${tagsStr}]
     pluginInitialized = true;
     currentTopicUrl = topicUrl;
     console.log('[Discourse Saver] 插件已加载 (V3.6.0)');
+    rlog('INFO', '初始化完成: ' + location.pathname.substring(0, 60));
   }
 
-  // 并发保护：防止多个 initWithRetry 同时运行
-  let initRetryRunning = false;
-
-  // 页面加载完成后初始化（带重试，防止 SPA 渲染延迟导致检测失败）
-  async function initWithRetry(retries = 5, delay = 500) {
-    if (initRetryRunning) {
-      console.log('[Discourse Saver] initWithRetry 已在运行，跳过');
-      return;
+  // 带重试的初始化（Discourse SPA 可能延迟渲染）
+  function initWithRetry(maxRetries = 3, delay = 300) {
+    let attempts = 0;
+    function tryInit() {
+      attempts++;
+      init().then(() => {
+        if (!pluginInitialized && attempts < maxRetries) {
+          setTimeout(tryInit, delay);
+        }
+      });
     }
-    initRetryRunning = true;
-    try {
-      for (let i = 0; i < retries; i++) {
-        await init();
-        if (pluginInitialized) return; // 初始化成功
-        // 等待后重试（页面可能还在渲染）
-        await new Promise(r => setTimeout(r, delay));
-      }
-      console.log('[Discourse Saver] 多次重试后仍未初始化（可能非帖子页面）');
-    } finally {
-      initRetryRunning = false;
-    }
+    tryInit();
   }
 
+  // 页面加载完成后初始化
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      initWithRetry().catch(err => console.error('[Discourse Saver] initWithRetry 异常:', err));
-    });
+    document.addEventListener('DOMContentLoaded', () => initWithRetry());
   } else {
-    initWithRetry().catch(err => console.error('[Discourse Saver] initWithRetry 异常:', err));
+    initWithRetry();
   }
 
   // 监听页面导航（单页应用）
   let lastUrl = location.href;
-  const spaObserver = new MutationObserver(() => {
+  let navDebounceTimer = null;
+  const observer = new MutationObserver(() => {
     const url = location.href;
     if (url !== lastUrl) {
       lastUrl = url;
       console.log('[Discourse Saver] 检测到页面导航:', url);
-      // 清除残留的 linkClickTimer（BUG-6: 防止在错误页面执行保存）
-      if (linkClickTimer) {
-        clearTimeout(linkClickTimer);
-        linkClickTimer = null;
-        linkClickCount = 0;
-        lastLinkPostNumber = null;
-      }
+      rlog('INFO', 'SPA导航: ' + url.substring(0, 80));
       // 页面导航时重置初始化状态，允许重新初始化
       pluginInitialized = false;
-      initWithRetry(5, 500).catch(err => console.error('[Discourse Saver] SPA导航后初始化异常:', err));
+      if (navDebounceTimer) clearTimeout(navDebounceTimer);
+      navDebounceTimer = setTimeout(() => {
+        navDebounceTimer = null;
+        initWithRetry(5, 500);
+      }, 500);
     }
   });
-  spaObserver.observe(document, { subtree: true, childList: true });
+  observer.observe(document, { subtree: true, childList: true });
 
-  // 页面卸载时断开 MutationObserver（防止内存泄漏）
+  // 页面卸载时清理
   window.addEventListener('pagehide', () => {
-    spaObserver.disconnect();
+    observer.disconnect();
+    if (navDebounceTimer) clearTimeout(navDebounceTimer);
   });
 
 })();

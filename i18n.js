@@ -22,7 +22,16 @@ const i18n = {
       siyuan: '思源笔记设置',
       yuque: '语雀设置',
       content: '内容设置',
-      comments: '评论设置'
+      comments: '评论设置',
+      runtimeLogs: '运行日志'
+    },
+    runtimeLogs: {
+      help: '记录插件检测、注入、按钮拦截等运行状态，用于排查问题。最多保留500条，自动覆盖旧日志。',
+      filterAll: '全部',
+      refresh: '刷新',
+      export: '导出',
+      clear: '清空',
+      empty: '暂无日志'
     },
     pluginStatus: {
       enabled: '启用插件（关闭后链接按钮恢复原功能）',
@@ -354,7 +363,16 @@ const i18n = {
       siyuan: 'SiYuan Note Settings',
       yuque: 'Yuque Settings',
       content: 'Content Settings',
-      comments: 'Comment Settings'
+      comments: 'Comment Settings',
+      runtimeLogs: 'Runtime Logs'
+    },
+    runtimeLogs: {
+      help: 'Records plugin detection, injection, button interception status for troubleshooting. Max 500 entries, auto-overwrites oldest.',
+      filterAll: 'All',
+      refresh: 'Refresh',
+      export: 'Export',
+      clear: 'Clear',
+      empty: 'No logs yet'
     },
     pluginStatus: {
       enabled: 'Enable Plugin (Link button restores original function when disabled)',

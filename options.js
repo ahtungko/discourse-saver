@@ -585,19 +585,30 @@ function saveOptions(e) {
 // 恢复默认（彻底清除所有数据，恢复到刚安装状态）
 function resetOptions() {
   showConfirmDialog(
-    '确定恢复默认设置？所有配置（飞书、Notion、语雀、自定义站点等）都会被清空，恢复到插件刚安装时的状态。',
+    '确定恢复默认设置？所有配置（飞书、Notion、语雀、自定义站点等）、运行日志、历史记录都会被清空，恢复到插件刚安装时的状态。',
     () => {
       // 先写入默认配置（保证 pluginEnabled 始终有值，避免竞态条件）
-      chrome.storage.sync.set(DEFAULT_CONFIG, () => {
-        // 再清除 local 存储（日志、语言等设备数据）
-        chrome.storage.local.clear(() => {
-          loadOptions();
-          // 清空自定义站点列表UI
-          const sitesList = document.getElementById('customSitesList');
-          if (sitesList) sitesList.innerHTML = '';
-          showStatus('已恢复默认设置，所有数据已清除', 'success');
+      // 先清除 background.js 内存中的日志缓冲（含定时器），再清 storage
+      try {
+        chrome.runtime.sendMessage({ action: 'clearLogs' }, () => {
+          // 忽略 lastError（service worker 可能未就绪）
+          void chrome.runtime.lastError;
+          doReset();
         });
-      });
+      } catch (_) {
+        doReset();
+      }
+
+      function doReset() {
+        chrome.storage.sync.set(DEFAULT_CONFIG, () => {
+          chrome.storage.local.clear(() => {
+            loadOptions();
+            const sitesList = document.getElementById('customSitesList');
+            if (sitesList) sitesList.innerHTML = '';
+            showStatus('已恢复默认设置，所有数据已清除', 'success');
+          });
+        });
+      }
     }
   );
 }
@@ -1258,4 +1269,121 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   }
+
+  // ==================== Runtime Logs ====================
+  const logContainer = document.getElementById('logContainer');
+  const logEmpty = document.getElementById('logEmpty');
+  const logCountLabel = document.getElementById('logCountLabel');
+  const logLevelFilter = document.getElementById('logLevelFilter');
+  const refreshLogsBtn = document.getElementById('refreshLogsBtn');
+  const exportLogsBtn = document.getElementById('exportLogsBtn');
+  const clearLogsBtn = document.getElementById('clearLogsBtn');
+
+  let allLogs = [];
+
+  function formatLogTime(ts) {
+    const d = new Date(ts);
+    const pad = (n) => String(n).padStart(2, '0');
+    return pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' +
+           pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  }
+
+  function renderLogs() {
+    const filter = logLevelFilter ? logLevelFilter.value : 'ALL';
+    const filtered = filter === 'ALL' ? allLogs : allLogs.filter(e => e.l === filter);
+
+    if (!logContainer) return;
+
+    if (filtered.length === 0) {
+      logContainer.innerHTML = '';
+      logContainer.appendChild(logEmpty);
+      logEmpty.style.display = 'block';
+    } else {
+      logEmpty.style.display = 'none';
+      // Build HTML (newest first)
+      const html = filtered.slice().reverse().map(e => {
+        const time = formatLogTime(e.t);
+        const lvl = e.l || 'INFO';
+        const src = e.s || '?';
+        const msg = (e.m || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return '<div class="log-entry">' +
+          '<span class="log-time">' + time + '</span> ' +
+          '<span class="log-level-' + lvl + '">[' + lvl + ']</span> ' +
+          '<span class="log-source">[' + src + ']</span> ' +
+          msg +
+          '</div>';
+      }).join('');
+      logContainer.innerHTML = html;
+    }
+
+    if (logCountLabel) {
+      logCountLabel.textContent = filtered.length + ' / ' + allLogs.length + ' 条';
+    }
+  }
+
+  function loadLogs() {
+    // 刷新按钮旋转动画
+    if (refreshLogsBtn) {
+      refreshLogsBtn.style.transition = 'transform 0.5s ease';
+      refreshLogsBtn.style.transform = 'rotate(360deg)';
+      refreshLogsBtn.disabled = true;
+      setTimeout(() => {
+        refreshLogsBtn.style.transition = 'none';
+        refreshLogsBtn.style.transform = 'rotate(0deg)';
+      }, 500);
+    }
+    chrome.runtime.sendMessage({ action: 'getLogs' }, (response) => {
+      if (refreshLogsBtn) refreshLogsBtn.disabled = false;
+      if (chrome.runtime.lastError) {
+        console.error('获取日志失败:', chrome.runtime.lastError);
+        return;
+      }
+      allLogs = (response && response.logs) || [];
+      renderLogs();
+    });
+  }
+
+  if (refreshLogsBtn) {
+    refreshLogsBtn.addEventListener('click', loadLogs);
+  }
+
+  if (logLevelFilter) {
+    logLevelFilter.addEventListener('change', renderLogs);
+  }
+
+  if (clearLogsBtn) {
+    clearLogsBtn.addEventListener('click', () => {
+      showConfirmDialog('确认清空所有运行日志？', () => {
+        chrome.runtime.sendMessage({ action: 'clearLogs' }, () => {
+          allLogs = [];
+          renderLogs();
+        });
+      });
+    });
+  }
+
+  if (exportLogsBtn) {
+    exportLogsBtn.addEventListener('click', () => {
+      if (allLogs.length === 0) {
+        showStatus('暂无日志可导出', 'info');
+        return;
+      }
+      const lines = allLogs.map(e => {
+        const time = new Date(e.t).toISOString();
+        return time + ' [' + (e.l || 'INFO') + '] [' + (e.s || '?') + '] ' + (e.m || '');
+      });
+      const text = 'Discourse Saver Runtime Logs\nExported: ' + new Date().toISOString() + '\nTotal: ' + allLogs.length + ' entries\n' +
+        '='.repeat(60) + '\n' + lines.join('\n');
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'discourse-saver-logs-' + new Date().toISOString().slice(0, 10) + '.txt';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+
+  // Auto-load logs when general tab is shown
+  loadLogs();
 });

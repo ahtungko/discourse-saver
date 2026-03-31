@@ -459,6 +459,16 @@
       margin-bottom: 16px;
     }
 
+    /* Log entries */
+    .log-entry { padding: 3px 8px; border-bottom: 1px solid var(--border-light); word-break: break-all; }
+    .log-entry:last-child { border-bottom: none; }
+    .log-time { color: var(--text-muted); }
+    .log-source { color: var(--accent); font-weight: 500; }
+    .log-level-ERROR { color: var(--error); font-weight: 600; }
+    .log-level-WARN { color: var(--warning); font-weight: 600; }
+    .log-level-INFO { color: var(--success); }
+    .log-level-DEBUG { color: var(--text-muted); }
+
     @media (max-width: 560px) {
       body { padding: 16px 10px; }
       .button-group { flex-direction: column; }
@@ -564,6 +574,29 @@
           <div class="checkbox-row">
             <input type="checkbox" id="includeImages" checked>
             <label for="includeImages" data-i18n="content.keepImages">保留图片链接</label>
+          </div>
+        </div>
+
+        <!-- Runtime Logs -->
+        <div class="form-group" style="margin-top: 20px;">
+          <label style="font-weight: 600; font-size: 14px; margin-bottom: 8px;" data-i18n="sections.runtimeLogs">运行日志</label>
+          <div class="help-text" style="margin-bottom: 10px;" data-i18n="runtimeLogs.help">记录插件检测、注入、按钮拦截等运行状态，用于排查问题。最多保留500条，自动覆盖旧日志。</div>
+          <div id="logFilterRow" style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">
+            <select id="logLevelFilter" style="padding:6px 10px;border:1px solid var(--input-border);border-radius:6px;font-size:13px;background:var(--input-bg);color:var(--text);">
+              <option value="ALL" data-i18n="runtimeLogs.filterAll">全部</option>
+              <option value="ERROR">ERROR</option>
+              <option value="WARN">WARN</option>
+              <option value="INFO">INFO</option>
+              <option value="DEBUG">DEBUG</option>
+            </select>
+            <span id="logCountLabel" style="font-size:12px;color:var(--text-muted);">0 条</span>
+            <span style="flex:1;"></span>
+            <button type="button" id="refreshLogsBtn" style="padding:6px 12px;font-size:12px;border-radius:6px;background:var(--accent);color:#fff;border:none;cursor:pointer;" data-i18n="runtimeLogs.refresh">刷新</button>
+            <button type="button" id="exportLogsBtn" style="padding:6px 12px;font-size:12px;border-radius:6px;background:var(--success);color:#fff;border:none;cursor:pointer;" data-i18n="runtimeLogs.export">导出</button>
+            <button type="button" id="clearLogsBtn" style="padding:6px 12px;font-size:12px;border-radius:6px;background:var(--error);color:#fff;border:none;cursor:pointer;" data-i18n="runtimeLogs.clear">清空</button>
+          </div>
+          <div id="logContainer" style="border:1px solid var(--input-border);border-radius:6px;max-height:300px;overflow-y:auto;background:var(--sub-bg);font-family:monospace;font-size:12px;line-height:1.6;">
+            <div id="logEmpty" style="padding:20px;text-align:center;color:var(--text-muted);" data-i18n="runtimeLogs.empty">暂无日志</div>
           </div>
         </div>
       </div>

@@ -17,9 +17,62 @@
 // V4.3.5: 版本同步
 
 // 点击扩展图标时打开选项页
-chrome.action.onClicked.addListener(() => {
-  chrome.runtime.openOptionsPage();
-});
+if (chrome.action?.onClicked) {
+  chrome.action.onClicked.addListener(() => {
+    chrome.runtime.openOptionsPage();
+  });
+}
+
+// ==================== 运行日志管理器 ====================
+const LOG_MAX_ENTRIES = 500;
+const LOG_STORAGE_KEY = 'runtimeLogs';
+let logBuffer = [];       // 内存缓冲区
+let logFlushTimer = null; // 定时刷写计时器
+
+// 写入一条日志
+function addLog(level, source, message) {
+  const entry = {
+    t: Date.now(),
+    l: level,   // INFO | WARN | ERROR
+    s: source,  // detector | background | content
+    m: message
+  };
+  logBuffer.push(entry);
+  // 达到 10 条或无计时器时，安排刷写
+  if (logBuffer.length >= 10) {
+    flushLogs();
+  } else if (!logFlushTimer) {
+    logFlushTimer = setTimeout(flushLogs, 3000);
+  }
+}
+
+// 将缓冲区刷写到 chrome.storage.local
+async function flushLogs() {
+  if (logFlushTimer) {
+    clearTimeout(logFlushTimer);
+    logFlushTimer = null;
+  }
+  if (logBuffer.length === 0) return;
+
+  const batch = logBuffer.splice(0);
+  try {
+    const data = await chrome.storage.local.get({ [LOG_STORAGE_KEY]: [] });
+    let logs = data[LOG_STORAGE_KEY];
+    logs.push(...batch);
+    // FIFO：超过上限时截断最旧的
+    if (logs.length > LOG_MAX_ENTRIES) {
+      logs = logs.slice(logs.length - LOG_MAX_ENTRIES);
+    }
+    await chrome.storage.local.set({ [LOG_STORAGE_KEY]: logs });
+  } catch (err) {
+    console.error('[Discourse Saver] 日志刷写失败:', err);
+  }
+}
+
+// background 自身的日志快捷方法
+function bgLog(level, message) {
+  addLog(level, 'background', message);
+}
 
 // API 域名映射
 const API_DOMAINS = {
@@ -2471,6 +2524,33 @@ async function testNotionConnection(config) {
 
 // 监听来自content script的消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+
+  // ===== 日志相关消息 =====
+  if (request.action === 'log') {
+    addLog(request.level || 'INFO', request.source || 'unknown', request.message || '');
+    return false; // 同步，不需要 sendResponse
+  }
+  if (request.action === 'getLogs') {
+    (async () => {
+      await flushLogs(); // 先刷写缓冲区
+      const data = await chrome.storage.local.get({ [LOG_STORAGE_KEY]: [] });
+      sendResponse({ logs: data[LOG_STORAGE_KEY] });
+    })();
+    return true;
+  }
+  if (request.action === 'clearLogs') {
+    // 先取消待执行的刷写定时器，防止旧数据写回
+    if (logFlushTimer) {
+      clearTimeout(logFlushTimer);
+      logFlushTimer = null;
+    }
+    logBuffer = [];
+    chrome.storage.local.set({ [LOG_STORAGE_KEY]: [] }, () => {
+      sendResponse({ success: true });
+    });
+    return true; // 异步响应
+  }
+
   // V4.3.6: 处理 HTML 文件下载请求
   if (request.action === 'downloadHtml') {
     (async () => {
@@ -2518,18 +2598,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // V3.6.0: 处理动态脚本注入请求（来自 detector.js）
   if (request.action === 'injectContentScript') {
     console.log('[Discourse Saver] 收到脚本注入请求，URL:', request.tabUrl);
+    bgLog('INFO', '收到注入请求: ' + (request.tabUrl || '').substring(0, 80));
 
     (async () => {
       try {
         const tabId = sender.tab?.id;
         if (!tabId) {
           console.error('[Discourse Saver] 无法获取标签页ID');
+          bgLog('ERROR', '注入失败: 无法获取标签页ID');
           sendResponse({ success: false, error: '无法获取标签页ID' });
           return;
         }
 
-        // 防重复注入由 content.js 内部版本号检查负责
-        // 这里始终执行注入流程，确保扩展更新后旧页面也能正常工作
+        // content.js 内部通过版本号处理去重，此处直接注入
 
         // 注入 turndown 库
         await chrome.scripting.executeScript({
@@ -2551,10 +2632,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           files: ['content.js']
         });
         console.log('[Discourse Saver] content.js 注入成功');
+        bgLog('INFO', '注入成功: tabId=' + tabId);
 
         sendResponse({ success: true });
       } catch (error) {
         console.error('[Discourse Saver] 脚本注入失败:', error);
+        bgLog('ERROR', '注入失败: ' + error.message);
         sendResponse({ success: false, error: error.message });
       }
     })();
@@ -2872,9 +2955,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 async function downloadMediaToVault(config, mediaUrls, vaultMediaPath, mediaFolderName) {
   const port = config.restApiPort || 27124;
-  // 优先使用 HTTP (27123) 避免自签名证书问题
-  const httpPort = port === 27124 ? 27123 : port;
-  const apiBase = `http://127.0.0.1:${httpPort}`;
+  // Local REST API 默认 HTTPS:27124，需用 https 协议
+  const apiBase = `https://127.0.0.1:${port}`;
+  bgLog('INFO', `媒体下载开始: ${mediaUrls.length}个文件, API=${apiBase}, path=${vaultMediaPath}`);
   const results = [];
   const existingNames = [];
 
@@ -2915,7 +2998,9 @@ async function downloadMediaToVault(config, mediaUrls, vaultMediaPath, mediaFold
 
       // 4. 通过 REST API 写入 Vault
       const filePath = `${vaultMediaPath}/${finalName}`;
-      const putResponse = await fetch(`${apiBase}/vault/${encodeURIComponent(filePath)}`, {
+      // 对路径各段分别编码，保留 / 分隔符
+      const encodedPath = filePath.split('/').map(seg => encodeURIComponent(seg)).join('/');
+      const putResponse = await fetch(`${apiBase}/vault/${encodedPath}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${config.restApiKey}`,
