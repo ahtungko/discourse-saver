@@ -46,6 +46,9 @@
 // @match        https://community.bitwarden.com/*
 // @match        https://discuss.emberjs.com/*
 // @include      *://*discourse*/*
+// @include      *://*forum*/*
+// @include      *://*discuss*/*
+// @include      *://*community*/*
 // @require      https://cdn.jsdelivr.net/npm/turndown@7.1.2/dist/turndown.js
 // @grant        GM_getValue
 // @grant        GM_setValue
