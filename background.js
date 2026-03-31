@@ -2820,7 +2820,241 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     return true;
   }
+
+  // 保存到语雀
+  if (request.action === 'saveToYuque') {
+    console.log('[Discourse Saver→语雀] 收到保存请求');
+
+    (async () => {
+      try {
+        const { config, postData } = request;
+        const result = await saveToYuque(postData, config);
+        sendResponse(result);
+      } catch (error) {
+        console.error('[Discourse Saver→语雀] 保存失败:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+
+    return true;
+  }
+
+  // 测试语雀连接
+  if (request.action === 'testYuqueConnection') {
+    console.log('[Discourse Saver→语雀] 收到测试连接请求');
+
+    (async () => {
+      try {
+        const result = await testYuqueConnection(request.config);
+        sendResponse(result);
+      } catch (error) {
+        console.error('[Discourse Saver→语雀] 测试连接失败:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+
+    return true;
+  }
 });
+
+// ==================== 语雀 API ====================
+
+const YUQUE_API_BASE = 'https://www.yuque.com/api/v2';
+
+// 语雀 API 请求封装
+async function yuqueApiRequest(path, options = {}) {
+  const { token, method = 'GET', body } = options;
+
+  const headers = {
+    'X-Auth-Token': token,
+    'Content-Type': 'application/json; charset=UTF-8',
+    'User-Agent': 'Discourse-Saver-Extension'
+  };
+
+  const fetchOptions = { method, headers };
+  if (body) {
+    fetchOptions.body = JSON.stringify(body);
+  }
+
+  const response = await fetch(`${YUQUE_API_BASE}${path}`, fetchOptions);
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    let errorMsg = `HTTP ${response.status}`;
+    try {
+      const errorJson = JSON.parse(errorText);
+      errorMsg = errorJson.message || errorMsg;
+    } catch(e) {
+      if (errorText) errorMsg += `: ${errorText.substring(0, 200)}`;
+    }
+    throw new Error(errorMsg);
+  }
+
+  return await response.json();
+}
+
+// 保存到语雀
+async function saveToYuque(postData, config) {
+  const { yuqueToken, yuqueRepoNamespace, yuqueDocPublic } = config;
+  const { title, content, url, author, category, tags, commentCount } = postData;
+
+  // 生成 slug（从标题或URL）
+  const slug = generateYuqueSlug(title, url);
+
+  // 构建文档内容：在 Markdown 前面加上元数据
+  let docBody = content;
+  if (url || author || category) {
+    let meta = '> ';
+    if (url) meta += `原文: ${url}`;
+    if (author) meta += ` | 作者: ${author}`;
+    if (category) meta += ` | 分类: ${category}`;
+    if (tags && tags.length > 0) meta += ` | 标签: ${tags.join(', ')}`;
+    docBody = meta + '\n\n---\n\n' + content;
+  }
+
+  // 先检查是否已存在同名文档
+  let existingDoc = null;
+  try {
+    const listResult = await yuqueApiRequest(`/repos/${encodeURIComponent(yuqueRepoNamespace)}/docs`, {
+      token: yuqueToken
+    });
+    if (listResult.data) {
+      existingDoc = listResult.data.find(doc => doc.slug === slug);
+    }
+  } catch (e) {
+    // 忽略列表获取失败，继续创建
+    console.log('[Discourse Saver→语雀] 获取文档列表失败，将直接创建:', e.message);
+  }
+
+  if (existingDoc) {
+    // 更新已有文档
+    console.log('[Discourse Saver→语雀] 发现同名文档，更新...');
+    const updateResult = await yuqueApiRequest(
+      `/repos/${encodeURIComponent(yuqueRepoNamespace)}/docs/${existingDoc.id}`,
+      {
+        token: yuqueToken,
+        method: 'PUT',
+        body: {
+          title: title,
+          body: docBody,
+          public: parseInt(yuqueDocPublic) || 0
+        }
+      }
+    );
+    return {
+      success: true,
+      action: 'updated',
+      docId: updateResult.data?.id,
+      docUrl: `https://www.yuque.com/${yuqueRepoNamespace}/${slug}`
+    };
+  } else {
+    // 创建新文档
+    const createResult = await yuqueApiRequest(
+      `/repos/${encodeURIComponent(yuqueRepoNamespace)}/docs`,
+      {
+        token: yuqueToken,
+        method: 'POST',
+        body: {
+          title: title,
+          slug: slug,
+          body: docBody,
+          format: 'markdown',
+          public: parseInt(yuqueDocPublic) || 0
+        }
+      }
+    );
+    return {
+      success: true,
+      action: 'created',
+      docId: createResult.data?.id,
+      docUrl: `https://www.yuque.com/${yuqueRepoNamespace}/${slug}`
+    };
+  }
+}
+
+// 生成语雀文档 slug
+function generateYuqueSlug(title, url) {
+  // 从 URL 提取 topic ID 作为 slug 的一部分（确保唯一性）
+  let topicId = '';
+  const match = url?.match(/\/t\/[^/]+\/(\d+)/);
+  if (match) {
+    topicId = match[1];
+  }
+
+  // 将标题转为 slug（移除特殊字符，保留中文和字母数字）
+  let slug = title
+    .replace(/[<>:"/\\|?*#\[\](){}@!$%^&=+`~,;']/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .substring(0, 50);
+
+  if (topicId) {
+    slug = `discourse-${topicId}-${slug}`;
+  }
+
+  return slug || `discourse-${Date.now()}`;
+}
+
+// 测试语雀连接
+async function testYuqueConnection(config) {
+  const { yuqueToken, yuqueRepoNamespace } = config;
+
+  // 1. 验证 Token：获取用户信息
+  const userResult = await yuqueApiRequest('/user', { token: yuqueToken });
+  const userName = userResult.data?.name || userResult.data?.login || '未知';
+  const userLogin = userResult.data?.login || '';
+
+  // 2. 如果提供了 namespace，验证知识库
+  if (yuqueRepoNamespace) {
+    try {
+      const repoResult = await yuqueApiRequest(
+        `/repos/${encodeURIComponent(yuqueRepoNamespace)}`,
+        { token: yuqueToken }
+      );
+      const repoName = repoResult.data?.name || yuqueRepoNamespace;
+      const docCount = repoResult.data?.items_count || 0;
+      return {
+        success: true,
+        message: `连接成功！用户: ${userName}，知识库「${repoName}」（${docCount}篇文档）`
+      };
+    } catch (repoError) {
+      return {
+        success: false,
+        error: `用户验证成功（${userName}），但知识库「${yuqueRepoNamespace}」访问失败: ${repoError.message}`
+      };
+    }
+  }
+
+  // 3. 没有提供 namespace，列出知识库供用户选择
+  try {
+    const reposResult = await yuqueApiRequest(
+      `/users/${userLogin}/repos`,
+      { token: yuqueToken }
+    );
+    const repos = reposResult.data || [];
+    if (repos.length === 0) {
+      return {
+        success: true,
+        message: `连接成功！用户: ${userName}。暂无知识库，请先在语雀创建一个知识库。`
+      };
+    }
+
+    const repoList = repos.slice(0, 10).map(r =>
+      `• ${r.namespace} —「${r.name}」(${r.items_count || 0}篇)`
+    ).join('\n');
+
+    return {
+      success: true,
+      message: `连接成功！用户: ${userName}\n\n可用知识库:\n${repoList}\n\n请复制 namespace 填入上方输入框。`
+    };
+  } catch (listError) {
+    return {
+      success: true,
+      message: `连接成功！用户: ${userName}。获取知识库列表失败: ${listError.message}，请手动输入 namespace。`
+    };
+  }
+}
 
 // 辅助函数：获取字段类型名称
 function getFieldTypeName(typeCode) {

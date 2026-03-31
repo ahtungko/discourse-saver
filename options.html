@@ -157,6 +157,7 @@
     .badge-feishu { background: #3370ff; color: #fff; }
     .badge-notion { background: #000; color: #fff; }
     .badge-siyuan { background: #d23f31; color: #fff; }
+    .badge-yuque { background: #36b37e; color: #fff; }
 
     /* Tab Content */
     .tab-panel { display: none; padding: 20px 24px; }
@@ -483,7 +484,7 @@
         </div>
       </div>
       <h1>Discourse Saver</h1>
-      <p data-i18n="header.subtitle">保存 Discourse 论坛帖子到 Obsidian、飞书、Notion、思源笔记，或导出 HTML V5.1</p>
+      <p data-i18n="header.subtitle">保存 Discourse 论坛帖子到 Obsidian、飞书、Notion、思源笔记、语雀，或导出 HTML V5.3</p>
     </div>
 
     <!-- Tab Navigation -->
@@ -493,6 +494,7 @@
       <button class="tab-btn" data-tab="feishu" data-i18n="tabs.feishu">飞书</button>
       <button class="tab-btn" data-tab="notion">Notion</button>
       <button class="tab-btn" data-tab="siyuan" data-i18n="tabs.siyuan">思源</button>
+      <button class="tab-btn" data-tab="yuque" data-i18n="tabs.yuque">语雀</button>
       <button class="tab-btn" data-tab="comments" data-i18n="tabs.comments">评论</button>
     </nav>
 
@@ -524,6 +526,10 @@
           <div class="checkbox-row">
             <input type="checkbox" id="saveToSiyuan">
             <label for="saveToSiyuan" data-i18n="saveTarget.siyuan">保存到思源笔记</label>
+          </div>
+          <div class="checkbox-row">
+            <input type="checkbox" id="saveToYuque">
+            <label for="saveToYuque" data-i18n="saveTarget.yuque">保存到语雀</label>
           </div>
           <div class="checkbox-row">
             <input type="checkbox" id="exportHtml">
@@ -799,6 +805,34 @@
         </div>
       </div>
 
+      <!-- ==================== Tab: Yuque ==================== -->
+      <div class="tab-panel" id="tab-yuque">
+        <div id="yuqueSection">
+          <div class="form-group">
+            <label data-i18n="yuque.token">个人访问令牌 (Token)</label>
+            <input type="password" id="yuqueToken" placeholder="在 语雀 设置→Token 中生成">
+            <div class="help-text" data-i18n="yuque.tokenHelp">在 yuque.com/settings/tokens 生成个人访问令牌</div>
+          </div>
+          <div class="form-group">
+            <label data-i18n="yuque.repoNamespace">知识库 (namespace)</label>
+            <input type="text" id="yuqueRepoNamespace" placeholder="用户名/知识库slug，如 acheng/notes">
+            <div class="help-text" data-i18n="yuque.repoNamespaceHelp">格式：用户名/知识库slug，可先点「测试连接」查看知识库列表</div>
+          </div>
+          <div class="form-group">
+            <label data-i18n="yuque.docPublic">文档可见性</label>
+            <select id="yuqueDocPublic">
+              <option value="0" data-i18n="yuque.private">私密</option>
+              <option value="1" data-i18n="yuque.public">公开</option>
+            </select>
+          </div>
+          <button type="button" id="testYuqueBtn" class="test-btn" data-i18n="yuque.testConnection">测试连接</button>
+
+          <div class="tip-box" style="margin-top: 16px;">
+            <p data-i18n="yuque.configStepsTip"><strong>配置步骤：</strong><br>1. 登录语雀，进入 设置 → Token 生成访问令牌<br>2. 先点「测试连接」查看知识库列表<br>3. 复制目标知识库的 namespace 填入上方<br>4. 再次测试连接确认成功</p>
+          </div>
+        </div>
+      </div>
+
       <!-- ==================== Tab: Comments ==================== -->
       <div class="tab-panel" id="tab-comments">
         <div class="checkbox-row">
@@ -870,7 +904,7 @@
       <a href="https://github.com/acheng-byte/discourse-saver" target="_blank">GitHub</a> |
       <a href="https://linux.do" target="_blank">LinuxDo</a> |
       <a href="https://obsidian.md" target="_blank">Obsidian</a> |
-      Discourse Saver V5.1 &copy; 2026 acheng-byte
+      Discourse Saver V5.3 &copy; 2026 acheng-byte
     </div>
   </div>
 

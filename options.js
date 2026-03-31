@@ -98,7 +98,13 @@ const DEFAULT_CONFIG = {
   floorTo: 100,
 
   // 媒体文件夹名称
-  mediaFolderName: 'media'
+  mediaFolderName: 'media',
+
+  // 语雀设置
+  saveToYuque: false,
+  yuqueToken: '',
+  yuqueRepoNamespace: '',
+  yuqueDocPublic: 0
 };
 
 // 折叠/展开面板
@@ -268,6 +274,12 @@ function loadOptions() {
     document.getElementById('notionPropSavedDate').value = config.notionPropSavedDate || getNotionPropDefault('notionPropSavedDate', lang);
     document.getElementById('notionPropCommentCount').value = config.notionPropCommentCount || getNotionPropDefault('notionPropCommentCount', lang);
 
+    // 语雀设置
+    document.getElementById('saveToYuque').checked = config.saveToYuque;
+    document.getElementById('yuqueToken').value = config.yuqueToken || '';
+    document.getElementById('yuqueRepoNamespace').value = config.yuqueRepoNamespace || '';
+    document.getElementById('yuqueDocPublic').value = config.yuqueDocPublic || 0;
+
     // 内容设置
     document.getElementById('addMetadata').checked = config.addMetadata;
     document.getElementById('includeImages').checked = config.includeImages;
@@ -297,6 +309,7 @@ function loadOptions() {
     updateSaveAllCommentsVisibility(config.saveAllComments);
     updateImageSettingsVisibility(config.embedImages);
     updateFloorRangeVisibility(config.useFloorRange);
+    updateYuqueOptionsVisibility(config.saveToYuque);
 
     // 确保所有面板默认展开
     expandAllSections();
@@ -445,6 +458,12 @@ function saveOptions(e) {
     notionPropSavedDate: document.getElementById('notionPropSavedDate').value.trim() || '保存日期',
     notionPropCommentCount: document.getElementById('notionPropCommentCount').value.trim() || '评论数',
 
+    // 语雀设置
+    saveToYuque: document.getElementById('saveToYuque').checked,
+    yuqueToken: document.getElementById('yuqueToken').value.trim(),
+    yuqueRepoNamespace: document.getElementById('yuqueRepoNamespace').value.trim(),
+    yuqueDocPublic: parseInt(document.getElementById('yuqueDocPublic').value) || 0,
+
     // 内容设置
     addMetadata: document.getElementById('addMetadata').checked,
     includeImages: document.getElementById('includeImages').checked,
@@ -468,7 +487,7 @@ function saveOptions(e) {
   };
 
   // 验证：插件启用时至少选择一个保存目标
-  if (config.pluginEnabled && !config.saveToObsidian && !config.saveToFeishu && !config.saveToNotion && !config.exportHtml) {
+  if (config.pluginEnabled && !config.saveToObsidian && !config.saveToFeishu && !config.saveToNotion && !config.saveToYuque && !config.exportHtml) {
     showStatus('请至少选择一个保存目标', 'error');
     return;
   }
@@ -503,6 +522,18 @@ function saveOptions(e) {
     }
     if (!config.notionPropTitle) {
       showStatus('请填写标题属性名', 'error');
+      return;
+    }
+  }
+
+  // 验证：如果启用语雀，检查必填项
+  if (config.saveToYuque) {
+    if (!config.yuqueToken) {
+      showStatus('请填写语雀访问令牌 (Token)', 'error');
+      return;
+    }
+    if (!config.yuqueRepoNamespace) {
+      showStatus('请填写语雀知识库 namespace', 'error');
       return;
     }
   }
@@ -653,6 +684,66 @@ async function testNotionConnection() {
   }
 }
 
+// 更新语雀区域可见性
+function updateYuqueOptionsVisibility(enabled) {
+  const section = document.getElementById('yuqueSection');
+  if (section) {
+    section.style.opacity = enabled ? '1' : '0.5';
+    const inputs = section.querySelectorAll('input, select, button');
+    inputs.forEach(el => {
+      if (!el.classList.contains('test-btn')) {
+        el.style.pointerEvents = enabled ? 'auto' : 'none';
+      }
+    });
+  }
+}
+
+// 测试语雀连接
+async function testYuqueConnection() {
+  const btn = document.getElementById('testYuqueBtn');
+  const originalText = btn.textContent;
+
+  btn.textContent = '测试中...';
+  btn.disabled = true;
+
+  const config = {
+    yuqueToken: document.getElementById('yuqueToken').value.trim(),
+    yuqueRepoNamespace: document.getElementById('yuqueRepoNamespace').value.trim()
+  };
+
+  if (!config.yuqueToken) {
+    showStatus('请先填写语雀访问令牌', 'error');
+    btn.textContent = originalText;
+    btn.disabled = false;
+    return;
+  }
+
+  try {
+    chrome.runtime.sendMessage(
+      { action: 'testYuqueConnection', config },
+      (response) => {
+        btn.textContent = originalText;
+        btn.disabled = false;
+
+        if (chrome.runtime.lastError) {
+          showStatus('测试失败: ' + chrome.runtime.lastError.message, 'error');
+          return;
+        }
+
+        if (response.success) {
+          showStatus(response.message, 'success');
+        } else {
+          showStatus('连接失败: ' + response.error, 'error');
+        }
+      }
+    );
+  } catch (error) {
+    btn.textContent = originalText;
+    btn.disabled = false;
+    showStatus('测试失败: ' + error.message, 'error');
+  }
+}
+
 // 显示状态
 function showStatus(message, type) {
   const statusElement = document.getElementById('statusMessage');
@@ -718,6 +809,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 测试 Notion 连接 (V4.0.1)
   document.getElementById('testNotionBtn').addEventListener('click', testNotionConnection);
+
+  // 语雀相关事件
+  document.getElementById('saveToYuque').addEventListener('change', (e) => {
+    updateYuqueOptionsVisibility(e.target.checked);
+  });
+  document.getElementById('testYuqueBtn').addEventListener('click', testYuqueConnection);
 
   // 保存评论复选框控制子选项
   document.getElementById('saveComments').addEventListener('change', (e) => {

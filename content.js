@@ -91,7 +91,13 @@
     htmlExportFolder: 'Discourse导出',  // V4.3.6: HTML 导出文件夹
 
     // 媒体文件夹名称
-    mediaFolderName: 'media'
+    mediaFolderName: 'media',
+
+    // 语雀设置
+    saveToYuque: false,
+    yuqueToken: '',
+    yuqueRepoNamespace: '',
+    yuqueDocPublic: 0
   };
 
   // V4.2.3: Notion 属性的语言相关默认值
@@ -1937,6 +1943,48 @@ tags: [${tagsStr}]
         remoteSaveTasks.push(notionTask);
       }
 
+      // 准备语雀保存任务
+      const yuqueConfigComplete = config.saveToYuque &&
+        config.yuqueToken &&
+        config.yuqueRepoNamespace;
+
+      if (yuqueConfigComplete) {
+        console.log('[Discourse Saver→语雀] 检测到语雀配置，准备保存...');
+        showNotification('正在保存到语雀...', 'info');
+
+        let cleanYuqueUrl = url.replace(/#.*$/, '').replace(/\?.*$/, '');
+        let yuqueUrl = cleanYuqueUrl;
+        let yuqueTitle = title;
+        if (isSingleCommentMode) {
+          const match = cleanYuqueUrl.match(/^(.*\/t\/[^/]+\/\d+)(\/\d+)?$/);
+          if (match) {
+            cleanYuqueUrl = match[1];
+          }
+          yuqueUrl = `${cleanYuqueUrl}/${targetPostNumber}`;
+          yuqueTitle = `${title} [${targetPostNumber}楼]`;
+        }
+
+        const yuqueTask = sendMessageAsync({
+          action: 'saveToYuque',
+          config: {
+            yuqueToken: config.yuqueToken,
+            yuqueRepoNamespace: config.yuqueRepoNamespace,
+            yuqueDocPublic: config.yuqueDocPublic || 0
+          },
+          postData: {
+            title: yuqueTitle,
+            url: yuqueUrl,
+            author: author,
+            content: markdown,
+            category: category || '',
+            tags: tags || [],
+            commentCount: comments.length
+          }
+        }).then(response => ({ target: 'yuque', response }));
+
+        remoteSaveTasks.push(yuqueTask);
+      }
+
       // 并行执行所有远程保存任务
       if (remoteSaveTasks.length > 0) {
         Promise.allSettled(remoteSaveTasks).then(results => {
@@ -1960,6 +2008,14 @@ tags: [${tagsStr}]
                   console.error('[Discourse Saver→Notion] 保存失败:', response?.error);
                   showNotification('Notion 保存失败: ' + (response?.error || '未知错误'), 'error');
                 }
+              } else if (target === 'yuque') {
+                if (response && response.success) {
+                  const actionText = response.action === 'updated' ? '已更新' : '已保存';
+                  showNotification(`语雀${actionText}成功`, 'success');
+                } else {
+                  console.error('[Discourse Saver→语雀] 保存失败:', response?.error);
+                  showNotification('语雀保存失败: ' + (response?.error || '未知错误'), 'error');
+                }
               }
             } else {
               // Promise rejected（理论上不会发生，因为 sendMessageAsync 总是 resolve）
@@ -1971,7 +2027,7 @@ tags: [${tagsStr}]
 
       // V4.0.1: 如果所有保存目标都没有启用，提示用户
       // V4.2.6: 增加 exportHtml 为有效保存目标
-      if (!shouldSaveToObsidian && !feishuConfigComplete && !notionConfigComplete && !config.exportHtml) {
+      if (!shouldSaveToObsidian && !feishuConfigComplete && !notionConfigComplete && !yuqueConfigComplete && !config.exportHtml) {
         showNotification('请在设置中至少启用一个保存目标', 'warning');
       }
 

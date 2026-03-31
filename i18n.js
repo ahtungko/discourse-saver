@@ -3,7 +3,14 @@ const i18n = {
   zh: {
     header: {
       title: 'Discourse Saver - 设置',
-      subtitle: '保存 Discourse 论坛帖子到 Obsidian、飞书、Notion、思源笔记，或导出 HTML V5.1'
+      subtitle: '保存 Discourse 论坛帖子到 Obsidian、飞书、Notion、思源笔记、语雀，或导出 HTML V5.3'
+    },
+    tabs: {
+      general: '通用',
+      feishu: '飞书',
+      siyuan: '思源',
+      yuque: '语雀',
+      comments: '评论'
     },
     sections: {
       pluginStatus: '插件状态',
@@ -13,6 +20,7 @@ const i18n = {
       feishu: '飞书多维表格设置',
       notion: 'Notion Database 设置',
       siyuan: '思源笔记设置',
+      yuque: '语雀设置',
       content: '内容设置',
       comments: '评论设置'
     },
@@ -35,6 +43,7 @@ const i18n = {
       notion: '保存到 Notion Database',
       exportHtml: '导出 HTML 文件',
       siyuan: '保存到思源笔记',
+      yuque: '保存到语雀',
       multiSaveHelp: '可以同时保存到多个地方'
     },
     html: {
@@ -129,6 +138,17 @@ const i18n = {
       notebookHelpShort: '可先留空点击「测试连接」，会列出所有笔记本及 ID',
       savePathHelpShort: '支持 /文件夹/子目录 格式，留空保存到笔记本根目录',
       configStepsTip: '<strong>配置步骤：</strong><br>1. 确保思源笔记已启动（默认端口 6806）<br>2. 如需鉴权：设置 → 关于 → 设置访问授权码<br>3. 笔记本 ID 留空，先点「测试连接」查看可用笔记本列表<br>4. 复制目标笔记本 ID 填入上方输入框<br>5. 再次测试连接确认成功'
+    },
+    yuque: {
+      token: '个人访问令牌 (Token)',
+      tokenHelp: '在 yuque.com/settings/tokens 生成个人访问令牌',
+      repoNamespace: '知识库 (namespace)',
+      repoNamespaceHelp: '格式：用户名/知识库slug，可先点「测试连接」查看知识库列表',
+      docPublic: '文档可见性',
+      private: '私密',
+      public: '公开',
+      testConnection: '测试连接',
+      configStepsTip: '<strong>配置步骤：</strong><br>1. 登录语雀，进入 设置 → Token 生成访问令牌<br>2. 先点「测试连接」查看知识库列表<br>3. 复制目标知识库的 namespace 填入上方<br>4. 再次测试连接确认成功'
     },
     notion: {
       token: 'Integration Token',
@@ -274,6 +294,8 @@ const i18n = {
       notionTestFailed: 'Notion 连接测试失败',
       siyuanTestSuccess: '思源笔记连接测试成功！',
       siyuanTestFailed: '思源笔记连接测试失败',
+      yuqueTestSuccess: '语雀连接测试成功！',
+      yuqueTestFailed: '语雀连接测试失败',
       restApiTestSuccess: 'Obsidian Local REST API 连接成功！',
       restApiTestFailed: 'Obsidian Local REST API 连接失败',
       siteAdded: '站点已添加',
@@ -285,12 +307,13 @@ const i18n = {
       obsidian: 'Obsidian',
       feishu: '飞书',
       notion: 'Notion',
-      siyuan: '思源'
+      siyuan: '思源',
+      yuque: '语雀'
     },
     usage: {
       title: '使用方法：',
       tip: '<strong>使用方法：</strong><br>- 单击链接按钮 → 保存到各平台<br>- 双击链接按钮 → 复制链接<br>- Ctrl+Shift+S (Mac: ⌘+Shift+S) → 快捷键保存',
-      singleClick: '- 单击链接按钮 → 保存到 Obsidian/飞书/Notion/思源笔记',
+      singleClick: '- 单击链接按钮 → 保存到 Obsidian/飞书/Notion/思源笔记/语雀',
       doubleClick: '- 双击链接按钮 → 复制链接',
       shortcut: '- Ctrl+Shift+S（Mac: ⌘+Shift+S）→ 快捷键保存',
       feishuTutorial: '飞书配置教程：',
@@ -312,7 +335,14 @@ const i18n = {
   en: {
     header: {
       title: 'Discourse Saver - Settings',
-      subtitle: 'Save Discourse Forum Posts to Obsidian, Feishu, Notion, SiYuan Note or Export HTML V5.1'
+      subtitle: 'Save Discourse Forum Posts to Obsidian, Feishu, Notion, SiYuan Note, Yuque or Export HTML V5.3'
+    },
+    tabs: {
+      general: 'General',
+      feishu: 'Feishu',
+      siyuan: 'SiYuan',
+      yuque: 'Yuque',
+      comments: 'Comments'
     },
     sections: {
       pluginStatus: 'Plugin Status',
@@ -322,6 +352,7 @@ const i18n = {
       feishu: 'Feishu Bitable Settings',
       notion: 'Notion Database Settings',
       siyuan: 'SiYuan Note Settings',
+      yuque: 'Yuque Settings',
       content: 'Content Settings',
       comments: 'Comment Settings'
     },
@@ -344,6 +375,7 @@ const i18n = {
       notion: 'Save to Notion Database',
       exportHtml: 'Export HTML File',
       siyuan: 'Save to SiYuan Note',
+      yuque: 'Save to Yuque',
       multiSaveHelp: 'Can save to multiple destinations simultaneously'
     },
     html: {
@@ -438,6 +470,17 @@ const i18n = {
       notebookHelpShort: 'Leave empty and click "Test Connection" to list all notebooks with IDs',
       savePathHelpShort: 'Supports /folder/subfolder format, leave empty for notebook root',
       configStepsTip: '<strong>Configuration Steps:</strong><br>1. Ensure SiYuan Note is running (default port 6806)<br>2. If auth needed: Settings → About → Set Access Authorization Code<br>3. Leave Notebook ID empty, click "Test Connection" to see available notebooks<br>4. Copy target notebook ID into the input field above<br>5. Test connection again to confirm success'
+    },
+    yuque: {
+      token: 'Personal Access Token',
+      tokenHelp: 'Generate a personal access token at yuque.com/settings/tokens',
+      repoNamespace: 'Repository (namespace)',
+      repoNamespaceHelp: 'Format: username/repo-slug, click "Test Connection" to list repositories',
+      docPublic: 'Document Visibility',
+      private: 'Private',
+      public: 'Public',
+      testConnection: 'Test Connection',
+      configStepsTip: '<strong>Configuration Steps:</strong><br>1. Log in to Yuque, go to Settings → Token to generate access token<br>2. Click "Test Connection" to list your repositories<br>3. Copy the target repository namespace above<br>4. Test connection again to confirm success'
     },
     notion: {
       token: 'Integration Token',
@@ -583,6 +626,8 @@ const i18n = {
       notionTestFailed: 'Notion connection test failed',
       siyuanTestSuccess: 'SiYuan Note connection test successful!',
       siyuanTestFailed: 'SiYuan Note connection test failed',
+      yuqueTestSuccess: 'Yuque connection test successful!',
+      yuqueTestFailed: 'Yuque connection test failed',
       restApiTestSuccess: 'Obsidian Local REST API connection successful!',
       restApiTestFailed: 'Obsidian Local REST API connection failed',
       siteAdded: 'Site added',
@@ -594,12 +639,13 @@ const i18n = {
       obsidian: 'Obsidian',
       feishu: 'Feishu',
       notion: 'Notion',
-      siyuan: 'SiYuan'
+      siyuan: 'SiYuan',
+      yuque: 'Yuque'
     },
     usage: {
       title: 'How to Use:',
       tip: '<strong>How to Use:</strong><br>- Single click link button → Save to platforms<br>- Double click link button → Copy link<br>- Ctrl+Shift+S (Mac: ⌘+Shift+S) → Keyboard shortcut save',
-      singleClick: '- Single click link button → Save to Obsidian/Feishu/Notion/SiYuan Note',
+      singleClick: '- Single click link button → Save to Obsidian/Feishu/Notion/SiYuan Note/Yuque',
       doubleClick: '- Double click link button → Copy link',
       shortcut: '- Ctrl+Shift+S (Mac: ⌘+Shift+S) → Keyboard shortcut save',
       feishuTutorial: 'Feishu Configuration:',
