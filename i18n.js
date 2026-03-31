@@ -2,7 +2,8 @@
 const i18n = {
   zh: {
     header: {
-      subtitle: '保存 Discourse 论坛帖子到 Obsidian、飞书或 Notion V4.2.2'
+      title: 'Discourse Saver - 设置',
+      subtitle: '保存 Discourse 论坛帖子到 Obsidian、飞书、Notion、思源笔记，或导出 HTML V5.1'
     },
     sections: {
       pluginStatus: '插件状态',
@@ -11,6 +12,7 @@ const i18n = {
       obsidian: 'Obsidian 设置',
       feishu: '飞书多维表格设置',
       notion: 'Notion Database 设置',
+      siyuan: '思源笔记设置',
       content: '内容设置',
       comments: '评论设置'
     },
@@ -32,6 +34,7 @@ const i18n = {
       feishu: '保存到飞书多维表格',
       notion: '保存到 Notion Database',
       exportHtml: '导出 HTML 文件',
+      siyuan: '保存到思源笔记',
       multiSaveHelp: '可以同时保存到多个地方'
     },
     html: {
@@ -51,7 +54,11 @@ const i18n = {
       useUri: '使用 Advanced URI 插件',
       uriHelp: '支持保存大内容（需先在 Obsidian 中安装 Advanced URI 插件）',
       useAdvancedUri: '使用 Advanced URI 插件（支持大内容）',
-      advancedUriHelp: '需先在 Obsidian 中安装 "Advanced URI" 插件'
+      advancedUriHelp: '需先在 Obsidian 中安装 "Advanced URI" 插件',
+      testConnection: '测试连接',
+      showLogs: '查看日志',
+      folderHelpDetail2: '支持多种路径格式：智囊团/子目录、D:\\Vault\\文件夹、/Users/me/vault/folder',
+      restApiPortHelp: '默认 27124'
     },
     feishu: {
       version: 'API 版本',
@@ -75,6 +82,8 @@ const i18n = {
       uploadMdHelp: '将完整内容作为 .md 文件上传到飞书',
       uploadMdHelpDetail: '不勾选则只保存文本摘要，无需 drive 权限',
       testConnection: '测试连接',
+      optionFeishu: '飞书国内版 (feishu.cn)',
+      optionLark: 'Lark 国际版 (larksuite.com)',
       help: '配置教程请参考 README 中的飞书设置章节',
       perm1Title: '1. 必须的权限（均为免审）：',
       perm1Content: 'bitable:app（多维表格读写）',
@@ -82,12 +91,50 @@ const i18n = {
       perm2Content: 'drive:file:upload（上传文件到云空间）',
       perm3Title: '3. 多维表格字段（9个必填）：',
       perm3Content1: '标题（文本）、链接（超链接）、作者（文本）、分类（文本）、标签（文本）、保存时间（日期）、评论数（数字）',
-      perm3Content2: '如勾选上传附件：附件（附件）；否则：正文（文本）'
+      perm3Content2: '如勾选上传附件：附件（附件）；否则：正文（文本）',
+      uploadHtml: '上传 HTML 附件（需额外权限，可选）',
+      permRequired: '必须的权限：',
+      permAttachment: '附件权限：',
+      permFields: '字段：',
+      permRequiredContent: 'bitable:app（多维表格读写）',
+      permAttachmentContent: 'drive:file:upload（可选）',
+      permFieldsContent: '标题(文本)、链接(超链接)、作者(文本)、分类(文本)、标签(文本)、保存时间(日期)、评论数(数字)、正文(文本)、附件(附件)'
+    },
+    siyuan: {
+      apiUrl: 'API 地址',
+      apiUrlHelp: '思源笔记本地 API 地址，默认 http://127.0.0.1:6806',
+      apiUrlPlaceholder: 'http://127.0.0.1:6806',
+      token: '访问授权码 <span style="color:#dc2626;font-weight:bold;font-size:12px;">（可选，留空则不鉴权）</span>',
+      tokenHelp: '在思源笔记 设置 → 关于 → 访问授权码 中设置，留空则关闭鉴权',
+      tokenPlaceholder: '留空表示未设置授权码',
+      tokenHelpDetail: '在思源笔记 设置 → 关于 → 访问授权码 中设置，留空则关闭鉴权',
+      notebook: '笔记本 ID',
+      notebookHelp: '可先留空点击「测试连接」，会列出所有笔记本及 ID',
+      notebookPlaceholder: '20210808180117-czj9bvb',
+      notebookHelpDetail: '可先留空点击「测试连接」，会列出所有笔记本及 ID',
+      savePath: '保存路径',
+      savePathHelp: '笔记本内的保存目录，用 / 分隔',
+      savePathPlaceholder: '/Discourse收集箱',
+      savePathHelpDetail: '留空则保存到笔记本根目录，路径以 / 开头',
+      testConnection: '测试连接',
+      help: '需要思源笔记在本地运行，确保 API 服务已开启',
+      configStepsTitle: '配置步骤：',
+      configStep1: '1. 确保思源笔记已启动（默认端口 6806）',
+      configStep2: '2. 如需鉴权：设置 → 关于 → 设置访问授权码',
+      configStep3: '3. 笔记本 ID 留空，先点「测试连接」查看可用笔记本列表',
+      configStep4: '4. 复制目标笔记本 ID 填入上方输入框',
+      configStep5: '5. 再次测试连接确认成功',
+      apiUrlHelpShort: '思源笔记本地 API 地址，默认 http://127.0.0.1:6806',
+      tokenHelpShort: '在思源笔记 设置 → 关于 → 访问授权码 中设置，留空则关闭鉴权',
+      notebookHelpShort: '可先留空点击「测试连接」，会列出所有笔记本及 ID',
+      savePathHelpShort: '支持 /文件夹/子目录 格式，留空保存到笔记本根目录',
+      configStepsTip: '<strong>配置步骤：</strong><br>1. 确保思源笔记已启动（默认端口 6806）<br>2. 如需鉴权：设置 → 关于 → 设置访问授权码<br>3. 笔记本 ID 留空，先点「测试连接」查看可用笔记本列表<br>4. 复制目标笔记本 ID 填入上方输入框<br>5. 再次测试连接确认成功'
     },
     notion: {
       token: 'Integration Token',
       tokenPlaceholder: 'ntn_xxx 或 secret_xxx',
       tokenHelp: '以 ntn_ 或 secret_ 开头，从 Notion Integration 页面获取',
+      tokenHelpFull: '在 <a href="https://www.notion.so/profile/integrations/internal" target="_blank">Notion Internal Integrations</a> 创建获取',
       tokenHelpPre: '在',
       tokenHelpPost: '创建获取',
       detailedGuide: '详细教程',
@@ -111,6 +158,7 @@ const i18n = {
       propCategoryPlaceholder: '分类',
       propTagsLabel: '标签属性名',
       propTagsType: '（类型：Multi Select）',
+      propTagsPlaceholder: '标签',
       propSavedDateLabel: '保存日期属性名',
       propSavedDateType: '（类型：Date）',
       propSavedDatePlaceholder: '保存日期',
@@ -132,7 +180,10 @@ const i18n = {
       configStep3: '3. 在 Database 页面点击「...」→「Connections」→ 添加你的 Integration',
       configStep4: '4. 从 Database 链接中复制 ID 并填入上方',
       imageWarningTitle: '图片嵌入注意',
-      imageWarningContent: '如果开启了"图片嵌入（Base64）"功能，Notion 将无法显示图片（Notion 不支持 Base64 格式）。建议关闭图片嵌入或仅用于 Obsidian。'
+      imageWarningContent: '如果开启了"图片嵌入（Base64）"功能，Notion 将无法显示图片（Notion 不支持 Base64 格式）。建议关闭图片嵌入或仅用于 Obsidian。',
+      databaseIdHelpShort: '从 Database 链接中复制 32 位 ID',
+      propMappingHelp: '属性名需与 Notion Database 中的列名完全匹配',
+      configStepsTip: '<strong>配置步骤：</strong><br>1. 创建 Internal Integration 并复制 Token<br>2. 创建 Database 并添加以上属性列<br>3. 在 Database 页面「...」→「Connections」→ 添加 Integration<br>4. 从 Database 链接中复制 ID'
     },
     content: {
       addMetadata: '添加元数据（来源、作者、时间等）',
@@ -146,13 +197,38 @@ const i18n = {
       embedWarning3Title: '📄 HTML 导出提示：',
       embedWarning3Content: '每张图片约增加 100KB-1MB 文件大小。大文章（图片多或超长内容）建议关闭此功能，HTML 将保留原图链接，支持 10 万字以上内容流畅浏览。',
       maxWidth: '图片最大宽度',
+      maxWidthOpt0: '原始尺寸',
+      maxWidthOpt1920: '1920px（推荐）',
+      maxWidthOpt1280: '1280px',
+      maxWidthOpt800: '800px',
+      qualityOpt100: '100%',
+      qualityOpt90: '90%（推荐）',
+      qualityOpt80: '80%',
+      qualityOpt60: '60%',
       maxWidthHelp: '超过此宽度的图片会等比例缩小',
       maxWidthOriginal: '保持原始尺寸',
       quality: '图片质量',
       qualityHelp: '降低质量可减小文件体积',
       skipGif: '跳过 GIF 动图（保留原链接）',
       skipGifHelp: 'GIF 转 Base64 会失去动画效果，启用后保留原链接',
-      skipGifHelpDetail: 'GIF 转换后会失去动画效果'
+      skipGifHelpDetail: 'GIF 转换后会失去动画效果',
+      downloadImages: '下载图片/视频到 Vault 文件夹',
+      downloadImagesHelp: '通过 Obsidian Local REST API 将图片/视频直接写入 Vault，Markdown 使用相对路径引用',
+      downloadImagesWarning: '需要安装 Obsidian 社区插件「Local REST API」，在 Obsidian 设置中获取 API Key。',
+      downloadImagesNote: '此选项与"图片嵌入（Base64）"互斥，启用本选项将自动关闭 Base64 嵌入。',
+      restApiKey: 'API Key',
+      restApiKeyHelp: '在 Obsidian 设置 → Local REST API 中查看',
+      restApiKeyPlaceholder: '粘贴你的 API Key',
+      restApiPort: '端口',
+      restApiPortHelp: '默认 27124，一般不需要修改',
+      testRestApi: '测试连接',
+      restApiConfigTitle: '配置步骤：',
+      restApiStep1: '1. 在 Obsidian 中安装社区插件「Local REST API」',
+      restApiStep2: '2. 启用插件后，在设置中找到 API Key',
+      restApiStep3: '3. 将 API Key 粘贴到上方输入框',
+      restApiStep4: '4. 点击「测试连接」确认可用',
+      downloadVideos: '同时下载视频文件',
+      downloadVideosHelp: '启用后也会下载帖子中嵌入的视频文件'
     },
     comments: {
       saveComments: '保存评论区',
@@ -174,7 +250,8 @@ const i18n = {
       fetchExplainTitle: '评论获取说明：',
       fetchExplain1: '• 评论数 ≤30 条：从当前页面提取（快速）',
       fetchExplain2: '• 评论数 >30 条或勾选"保存全部"：通过API获取（完整，解决懒加载问题）',
-      fetchExplain3: '• 超过500条评论时会显示加载进度'
+      fetchExplain3: '• 超过500条评论时会显示加载进度',
+      fetchExplainTip: '<strong>获取说明：</strong><br>&#8226; ≤30条：从页面提取（快速）<br>&#8226; >30条或保存全部：通过 API 获取（完整）<br>&#8226; 超500条时显示加载进度'
     },
     buttons: {
       save: '保存设置',
@@ -193,6 +270,10 @@ const i18n = {
       feishuTestFailed: '飞书连接测试失败',
       notionTestSuccess: 'Notion 连接测试成功！',
       notionTestFailed: 'Notion 连接测试失败',
+      siyuanTestSuccess: '思源笔记连接测试成功！',
+      siyuanTestFailed: '思源笔记连接测试失败',
+      restApiTestSuccess: 'Obsidian Local REST API 连接成功！',
+      restApiTestFailed: 'Obsidian Local REST API 连接失败',
       siteAdded: '站点已添加',
       siteRemoved: '站点已删除',
       pleaseEnterDomain: '请输入域名'
@@ -201,20 +282,35 @@ const i18n = {
       new: '新',
       obsidian: 'Obsidian',
       feishu: '飞书',
-      notion: 'Notion'
+      notion: 'Notion',
+      siyuan: '思源'
     },
     usage: {
       title: '使用方法：',
-      singleClick: '- 单击链接按钮 → 保存到 Obsidian/飞书',
+      tip: '<strong>使用方法：</strong><br>- 单击链接按钮 → 保存到各平台<br>- 双击链接按钮 → 复制链接<br>- Ctrl+Shift+S (Mac: ⌘+Shift+S) → 快捷键保存',
+      singleClick: '- 单击链接按钮 → 保存到 Obsidian/飞书/Notion/思源笔记',
       doubleClick: '- 双击链接按钮 → 复制链接',
       shortcut: '- Ctrl+Shift+S（Mac: ⌘+Shift+S）→ 快捷键保存',
       feishuTutorial: '飞书配置教程：',
       feishuTutorialLink: '创建飞书自建应用'
+    },
+    coffee: {
+      button: '\u2615 请我喝杯咖啡',
+      title: '\u2615 请我喝杯咖啡',
+      subtitle: '如果这个插件对你有帮助，感谢你的支持！',
+      wechat: '微信支付',
+      alipay: '支付宝',
+      wechatAlt: '微信收款码',
+      alipayAlt: '支付宝收款码'
+    },
+    site: {
+      empty: '暂无自定义站点'
     }
   },
   en: {
     header: {
-      subtitle: 'Save Discourse Forum Posts to Obsidian, Feishu or Notion V4.2.2'
+      title: 'Discourse Saver - Settings',
+      subtitle: 'Save Discourse Forum Posts to Obsidian, Feishu, Notion, SiYuan Note or Export HTML V5.1'
     },
     sections: {
       pluginStatus: 'Plugin Status',
@@ -223,6 +319,7 @@ const i18n = {
       obsidian: 'Obsidian Settings',
       feishu: 'Feishu Bitable Settings',
       notion: 'Notion Database Settings',
+      siyuan: 'SiYuan Note Settings',
       content: 'Content Settings',
       comments: 'Comment Settings'
     },
@@ -244,6 +341,7 @@ const i18n = {
       feishu: 'Save to Feishu Bitable',
       notion: 'Save to Notion Database',
       exportHtml: 'Export HTML File',
+      siyuan: 'Save to SiYuan Note',
       multiSaveHelp: 'Can save to multiple destinations simultaneously'
     },
     html: {
@@ -263,7 +361,11 @@ const i18n = {
       useUri: 'Use Advanced URI Plugin',
       uriHelp: 'Support large content save (requires Advanced URI plugin installed in Obsidian)',
       useAdvancedUri: 'Use Advanced URI Plugin (supports large content)',
-      advancedUriHelp: 'Requires "Advanced URI" plugin installed in Obsidian'
+      advancedUriHelp: 'Requires "Advanced URI" plugin installed in Obsidian',
+      testConnection: 'Test Connection',
+      showLogs: 'View Logs',
+      folderHelpDetail2: 'Supports multiple path formats: subfolder, D:\\Vault\\folder, /Users/me/vault/folder',
+      restApiPortHelp: 'Default 27124'
     },
     feishu: {
       version: 'API Version',
@@ -287,6 +389,8 @@ const i18n = {
       uploadMdHelp: 'Upload complete content as .md file to Feishu',
       uploadMdHelpDetail: 'If unchecked, only save text summary without drive permission',
       testConnection: 'Test Connection',
+      optionFeishu: 'Feishu Domestic (feishu.cn)',
+      optionLark: 'Lark International (larksuite.com)',
       help: 'See Feishu Settings section in README for configuration tutorial',
       perm1Title: '1. Required Permissions (no review needed):',
       perm1Content: 'bitable:app (Bitable read/write)',
@@ -294,12 +398,50 @@ const i18n = {
       perm2Content: 'drive:file:upload (Upload files to cloud)',
       perm3Title: '3. Bitable Fields (9 required):',
       perm3Content1: 'Title (Text), Link (Hyperlink), Author (Text), Category (Text), Tags (Text), Save Time (Date), Comments (Number)',
-      perm3Content2: 'If upload attachment checked: Attachment (Attachment); otherwise: Content (Text)'
+      perm3Content2: 'If upload attachment checked: Attachment (Attachment); otherwise: Content (Text)',
+      uploadHtml: 'Upload HTML Attachment (extra permission, optional)',
+      permRequired: 'Required permissions:',
+      permAttachment: 'Attachment permission:',
+      permFields: 'Fields:',
+      permRequiredContent: 'bitable:app (Bitable read/write)',
+      permAttachmentContent: 'drive:file:upload (optional)',
+      permFieldsContent: 'Title(Text), Link(Hyperlink), Author(Text), Category(Text), Tags(Text), Save Time(Date), Comments(Number), Content(Text), Attachment(Attachment)'
+    },
+    siyuan: {
+      apiUrl: 'API URL',
+      apiUrlHelp: 'SiYuan Note local API address, default http://127.0.0.1:6806',
+      apiUrlPlaceholder: 'http://127.0.0.1:6806',
+      token: 'Access Authorization Code <span style="color:#dc2626;font-weight:bold;font-size:12px;">(Optional, leave empty to skip auth)</span>',
+      tokenHelp: 'Set in SiYuan Settings → About → Access Authorization Code. Leave empty to skip auth',
+      tokenPlaceholder: 'Leave empty if no authorization code is set',
+      tokenHelpDetail: 'Set in SiYuan Settings → About → Access Authorization Code. Leave empty to skip auth',
+      notebook: 'Notebook ID',
+      notebookHelp: 'Leave empty and click "Test Connection" to list all notebooks with IDs',
+      notebookPlaceholder: '20210808180117-czj9bvb',
+      notebookHelpDetail: 'Leave empty and click "Test Connection" to list all notebooks with IDs',
+      savePath: 'Save Path',
+      savePathHelp: 'Save directory within the notebook, separated by /',
+      savePathPlaceholder: '/Discourse Inbox',
+      savePathHelpDetail: 'Leave empty to save to notebook root, path starts with /',
+      testConnection: 'Test Connection',
+      help: 'SiYuan Note must be running locally with API service enabled',
+      configStepsTitle: 'Configuration Steps:',
+      configStep1: '1. Ensure SiYuan Note is running (default port 6806)',
+      configStep2: '2. If auth needed: Settings → About → Set Access Authorization Code',
+      configStep3: '3. Leave Notebook ID empty, click "Test Connection" to see available notebooks',
+      configStep4: '4. Copy target notebook ID into the input field above',
+      configStep5: '5. Test connection again to confirm success',
+      apiUrlHelpShort: 'SiYuan Note local API address, default http://127.0.0.1:6806',
+      tokenHelpShort: 'Set in SiYuan Settings → About → Access Authorization Code. Leave empty to skip auth',
+      notebookHelpShort: 'Leave empty and click "Test Connection" to list all notebooks with IDs',
+      savePathHelpShort: 'Supports /folder/subfolder format, leave empty for notebook root',
+      configStepsTip: '<strong>Configuration Steps:</strong><br>1. Ensure SiYuan Note is running (default port 6806)<br>2. If auth needed: Settings → About → Set Access Authorization Code<br>3. Leave Notebook ID empty, click "Test Connection" to see available notebooks<br>4. Copy target notebook ID into the input field above<br>5. Test connection again to confirm success'
     },
     notion: {
       token: 'Integration Token',
       tokenPlaceholder: 'ntn_xxx or secret_xxx',
       tokenHelp: 'Starts with ntn_ or secret_, get from Notion Integration page',
+      tokenHelpFull: 'Create at <a href="https://www.notion.so/profile/integrations/internal" target="_blank">Notion Internal Integrations</a>',
       tokenHelpPre: 'Create at',
       tokenHelpPost: 'to get token',
       detailedGuide: 'Detailed Guide',
@@ -323,6 +465,7 @@ const i18n = {
       propCategoryPlaceholder: 'Category',
       propTagsLabel: 'Tags Property Name',
       propTagsType: '(Type: Multi Select)',
+      propTagsPlaceholder: 'Tags',
       propSavedDateLabel: 'Save Date Property Name',
       propSavedDateType: '(Type: Date)',
       propSavedDatePlaceholder: 'Save Date',
@@ -344,7 +487,10 @@ const i18n = {
       configStep3: '3. Click "..." → "Connections" → Add your Integration on Database page',
       configStep4: '4. Copy ID from Database link and paste above',
       imageWarningTitle: 'Image Embedding Notice',
-      imageWarningContent: 'If "Embed images (Base64)" is enabled, Notion cannot display images (Notion does not support Base64 format). Recommend disabling image embedding or using only for Obsidian.'
+      imageWarningContent: 'If "Embed images (Base64)" is enabled, Notion cannot display images (Notion does not support Base64 format). Recommend disabling image embedding or using only for Obsidian.',
+      databaseIdHelpShort: 'Copy 32-character ID from Database link',
+      propMappingHelp: 'Property names must exactly match column names in Notion Database',
+      configStepsTip: '<strong>Configuration Steps:</strong><br>1. Create Internal Integration and copy Token<br>2. Create Database and add the property columns above<br>3. On Database page click "..." → "Connections" → Add Integration<br>4. Copy ID from Database link'
     },
     content: {
       addMetadata: 'Add metadata (source, author, time, etc.)',
@@ -358,13 +504,38 @@ const i18n = {
       embedWarning3Title: '📄 HTML Export Tip:',
       embedWarning3Content: 'Each image adds ~100KB-1MB to file size. For large articles (many images or long content), consider disabling this feature. HTML will keep original image links and supports 100,000+ characters smoothly.',
       maxWidth: 'Max Image Width',
+      maxWidthOpt0: 'Original Size',
+      maxWidthOpt1920: '1920px (Recommended)',
+      maxWidthOpt1280: '1280px',
+      maxWidthOpt800: '800px',
+      qualityOpt100: '100%',
+      qualityOpt90: '90% (Recommended)',
+      qualityOpt80: '80%',
+      qualityOpt60: '60%',
       maxWidthHelp: 'Images wider than this will be proportionally resized',
       maxWidthOriginal: 'Keep original size',
       quality: 'Image Quality',
       qualityHelp: 'Lower quality reduces file size',
       skipGif: 'Skip GIF animations (keep original link)',
       skipGifHelp: 'GIF to Base64 loses animation, keep original link when enabled',
-      skipGifHelpDetail: 'GIF will lose animation after conversion'
+      skipGifHelpDetail: 'GIF will lose animation after conversion',
+      downloadImages: 'Download images/videos to Vault folder',
+      downloadImagesHelp: 'Write images/videos directly to Vault via Obsidian Local REST API, Markdown uses relative paths',
+      downloadImagesWarning: 'Requires Obsidian community plugin "Local REST API". Get API Key from Obsidian settings.',
+      downloadImagesNote: 'This option is mutually exclusive with "Embed images (Base64)". Enabling this will disable Base64 embedding.',
+      restApiKey: 'API Key',
+      restApiKeyHelp: 'Find in Obsidian Settings → Local REST API',
+      restApiKeyPlaceholder: 'Paste your API Key',
+      restApiPort: 'Port',
+      restApiPortHelp: 'Default 27124, usually no need to change',
+      testRestApi: 'Test Connection',
+      restApiConfigTitle: 'Configuration Steps:',
+      restApiStep1: '1. Install community plugin "Local REST API" in Obsidian',
+      restApiStep2: '2. After enabling, find API Key in plugin settings',
+      restApiStep3: '3. Paste API Key in the input above',
+      restApiStep4: '4. Click "Test Connection" to verify',
+      downloadVideos: 'Also download video files',
+      downloadVideosHelp: 'Also download embedded video files from posts'
     },
     comments: {
       saveComments: 'Save Comment Section',
@@ -386,7 +557,8 @@ const i18n = {
       fetchExplainTitle: 'Comment Fetching:',
       fetchExplain1: '• ≤30 comments: Extract from current page (fast)',
       fetchExplain2: '• >30 comments or "Save All" checked: Fetch via API (complete, solves lazy-loading)',
-      fetchExplain3: '• Shows loading progress when >500 comments'
+      fetchExplain3: '• Shows loading progress when >500 comments',
+      fetchExplainTip: '<strong>Fetching Info:</strong><br>&#8226; ≤30 comments: Extract from page (fast)<br>&#8226; >30 or Save All: Fetch via API (complete)<br>&#8226; Shows progress when >500 comments'
     },
     buttons: {
       save: 'Save Settings',
@@ -405,6 +577,10 @@ const i18n = {
       feishuTestFailed: 'Feishu connection test failed',
       notionTestSuccess: 'Notion connection test successful!',
       notionTestFailed: 'Notion connection test failed',
+      siyuanTestSuccess: 'SiYuan Note connection test successful!',
+      siyuanTestFailed: 'SiYuan Note connection test failed',
+      restApiTestSuccess: 'Obsidian Local REST API connection successful!',
+      restApiTestFailed: 'Obsidian Local REST API connection failed',
       siteAdded: 'Site added',
       siteRemoved: 'Site removed',
       pleaseEnterDomain: 'Please enter domain'
@@ -413,15 +589,29 @@ const i18n = {
       new: 'New',
       obsidian: 'Obsidian',
       feishu: 'Feishu',
-      notion: 'Notion'
+      notion: 'Notion',
+      siyuan: 'SiYuan'
     },
     usage: {
       title: 'How to Use:',
-      singleClick: '- Single click link button → Save to Obsidian/Feishu',
+      tip: '<strong>How to Use:</strong><br>- Single click link button → Save to platforms<br>- Double click link button → Copy link<br>- Ctrl+Shift+S (Mac: ⌘+Shift+S) → Keyboard shortcut save',
+      singleClick: '- Single click link button → Save to Obsidian/Feishu/Notion/SiYuan Note',
       doubleClick: '- Double click link button → Copy link',
       shortcut: '- Ctrl+Shift+S (Mac: ⌘+Shift+S) → Keyboard shortcut save',
       feishuTutorial: 'Feishu Configuration:',
       feishuTutorialLink: 'Create Feishu App'
+    },
+    coffee: {
+      button: '\u2615 Buy Me a Coffee',
+      title: '\u2615 Buy Me a Coffee',
+      subtitle: 'If this extension helps you, thanks for your support!',
+      wechat: 'WeChat Pay',
+      alipay: 'Alipay',
+      wechatAlt: 'WeChat Pay QR Code',
+      alipayAlt: 'Alipay QR Code'
+    },
+    site: {
+      empty: 'No custom sites yet'
     }
   }
 };
@@ -447,11 +637,34 @@ function setLanguage(lang) {
     if (value) {
       if (el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'password')) {
         el.placeholder = value;
+      } else if (typeof value === 'string' && value.indexOf('<') !== -1) {
+        el.innerHTML = value;
       } else {
         el.textContent = value;
       }
     }
   });
+
+  // 更新页面标题
+  if (i18n[lang].header && i18n[lang].header.title) {
+    document.title = i18n[lang].header.title;
+  }
+
+  // 更新 img alt 属性
+  var wechatImg = document.querySelector('#donate-wechat img');
+  if (wechatImg && i18n[lang].coffee && i18n[lang].coffee.wechatAlt) {
+    wechatImg.alt = i18n[lang].coffee.wechatAlt;
+  }
+  var alipayImg = document.querySelector('#donate-alipay img');
+  if (alipayImg && i18n[lang].coffee && i18n[lang].coffee.alipayAlt) {
+    alipayImg.alt = i18n[lang].coffee.alipayAlt;
+  }
+
+  // 更新 data-empty-text 属性（用于 CSS ::before 伪元素）
+  var sitesList = document.getElementById('customSitesList');
+  if (sitesList && i18n[lang].site && i18n[lang].site.empty) {
+    sitesList.setAttribute('data-empty-text', i18n[lang].site.empty);
+  }
 
   // 更新语言切换按钮状态
   document.querySelectorAll('.language-toggle button').forEach(btn => {

@@ -1,15 +1,16 @@
-# Discourse Saver V4.6.24
+# Discourse Saver V5.1
 
 **[中文](README.md) | English**
 
-Save **any Discourse forum** posts and comments to **Obsidian**, **Feishu Bitable**, or **Notion** with one click. Also available as a **Tampermonkey userscript** for cross-browser support.
+Save **any Discourse forum** posts and comments to **Obsidian**, **Feishu Bitable**, **Notion**, **SiYuan Note**, or export as **HTML files** with one click. Also available as a **Tampermonkey userscript** for cross-browser support.
 
-> **V4.6.24 Updates**:
+> **V5.1 Updates**:
+> - **SiYuan Note Support** - Save posts to SiYuan Note via local kernel API
+> - **Tab Layout** - Settings page redesigned with tab navigation
+> - **Three Theme Modes** - Light/Dark/System theme switching
+> - **Path Normalization** - Cross-platform path handling (Windows/Mac/Linux)
+> - **HTML Export Enhancement** - Image Lightbox, table fullscreen/copy, 5 themes, PWA, PDF export
 > - **Tampermonkey Userscript** - Cross-browser support (Chrome/Edge/Firefox/Safari)
-> - **Comment Username Hyperlinks** (V4.3.8) - Click username to visit user profile
-> - **HTML Export Enhancement** (V4.3.5) - Image Lightbox, table fullscreen/copy, 5 themes, PWA, PDF export
-> - **Code Copy** - One-click code block copy
-> - **Responsive Design** - Perfect for mobile, tablet, desktop
 
 ## Browser Support
 
@@ -24,7 +25,7 @@ Save **any Discourse forum** posts and comments to **Obsidian**, **Feishu Bitabl
 | Firefox | ❌ Not Supported | Extension API incompatible |
 | Safari | ❌ Not Supported | Extension API incompatible |
 
-### Tampermonkey Userscript (V4.6.24)
+### Tampermonkey Userscript (V5.1)
 
 | Browser | Status | Notes |
 |---------|--------|-------|
@@ -183,22 +184,22 @@ For privately deployed or undetected Discourse sites, you can manually add them 
 
 | Action | Result |
 |--------|--------|
-| **Single click** on post link button | Save post to Obsidian/Feishu |
+| **Single click** on post link button | Save post to Obsidian/Feishu/Notion/SiYuan Note |
 | **Single click** on comment link button | Save post + that comment (filename: `Title-Floor X.md`) |
 | **Double click** on link button | Copy link to clipboard |
 | **Ctrl+Shift+S** (Mac: **⌘+Shift+S**) | Keyboard shortcut to save post |
 
 ---
 
-## V4.6.24 New Features
+## V5.1 New Features
 
-### Tampermonkey Userscript (V4.6.24)
+### Tampermonkey Userscript (V5.1)
 
 | Feature | Description |
 |---------|-------------|
 | **Cross-browser** | Supports Chrome, Edge, Firefox, Safari via Tampermonkey/Greasemonkey |
 | **40+ Forums** | Built-in @match rules for popular Discourse sites |
-| **Three Platforms** | Save to Obsidian / Notion / HTML export |
+| **Five Platforms** | Save to Obsidian / Feishu / Notion / SiYuan Note / HTML export |
 | **Comments** | Comment saving, collapse mode, username hyperlinks |
 | **One-click Install** | [Install page](https://acheng-byte.github.io/discourse-saver/install.html) with one-click copy |
 
@@ -303,7 +304,7 @@ For privately deployed or undetected Discourse sites, you can manually add them 
 1. Visit any **Discourse forum** (LinuxDo, Discourse Meta, etc.) post page
 2. Plugin will **auto-detect** and activate (first visit will show prompt)
 3. Find the **link button** (chain icon) in the bottom right of post/comment
-4. **Single click** → Save to Obsidian/Feishu
+4. **Single click** → Save to all enabled platforms (Obsidian/Feishu/Notion/SiYuan Note)
 5. **Double click** → Copy link to clipboard
 
 ### File Naming Rules
@@ -350,6 +351,8 @@ Settings page supports Chinese/English toggle, click **中文 / EN** button in t
 | Save to Obsidian | Enable Obsidian save |
 | Save to Feishu Bitable | Enable Feishu sync |
 | Save to Notion Database | Enable Notion sync (V4.0.1) |
+| Save to SiYuan Note | Enable SiYuan Note sync (V5.1) |
+| Export HTML File | Save as standalone HTML file (V4.3.5) |
 
 ### Obsidian Settings
 
@@ -358,6 +361,36 @@ Settings page supports Chinese/English toggle, click **中文 / EN** button in t
 | Vault Name | Leave empty to use currently open vault (recommended) |
 | Save Folder | Which folder in vault to save to |
 | Use Advanced URI | Support large content save (recommended to enable) |
+
+#### Download Images/Videos to Vault Folder
+
+When "Download images/videos to Vault folder" is checked, saving posts will automatically download images and videos to your local Obsidian Vault, and Markdown links will be replaced with local paths.
+
+**Prerequisite: Must install and configure the Obsidian community plugin "Local REST API"**
+
+**Step 1: Install Local REST API Plugin**
+1. Open Obsidian → Settings → Community Plugins → Browse
+2. Search for **Local REST API**, install and enable
+
+**Step 2: Enable HTTP Server (Critical)**
+1. Open Obsidian → Settings → Community Plugins → Local REST API
+2. Find **"Enable Non-encrypted (HTTP) Server"** option
+3. **Turn this switch ON** (it's off by default)
+4. HTTP port defaults to **27123**
+
+> Why enable HTTP? Chrome extensions cannot access self-signed HTTPS certificates, so HTTP port must be used. This service only runs locally and is not exposed to the internet.
+
+**Step 3: Configure in Discourse Saver**
+1. Open extension settings → Obsidian tab
+2. Check "Download images/videos to Vault folder"
+3. Enter **API Key** (copy from Local REST API plugin settings)
+4. Set port to **27123** (HTTP port, not the default 27124)
+5. Click "Test Connection" to verify
+
+**Step 4: Verify**
+- Green success prompt → Configuration complete
+- "Failed to fetch" → Check if HTTP server is enabled (Step 2)
+- Click "View Log" for detailed connection diagnostics
 
 ### Feishu Settings
 
@@ -390,6 +423,28 @@ Settings page supports Chinese/English toggle, click **中文 / EN** button in t
 | 评论数 (Comments) | Number | |
 
 > **Detailed Configuration Tutorial**: See [NOTION-GUIDE.html](NOTION-GUIDE.html)
+
+### SiYuan Note Settings (V5.1)
+
+| Option | Description |
+|--------|-------------|
+| API URL | SiYuan Note kernel API address, default `http://127.0.0.1:6806` |
+| API Token | SiYuan Note access authorization code (leave empty if auth is not enabled) |
+| Notebook ID | Target notebook ID (format: `20210808180117-czj9bvb`) |
+| Save Path | Save location within the notebook, default `/Discourse收集箱` |
+
+**Prerequisites:**
+1. SiYuan Note desktop client must be running
+2. Notebook ID is required (get it from right-click notebook → Settings)
+3. If access authorization is enabled, API Token must be provided
+
+> **Detailed Configuration Tutorial**: See [SiYuan Note Configuration Guide](docs/siyuan-guide.html)
+
+### HTML Export Settings (V4.3.5)
+
+| Option | Description |
+|--------|-------------|
+| Export Folder Name | Folder name for HTML file exports, default `Discourse导出` |
 
 ### Content Settings
 
@@ -670,7 +725,25 @@ See [NOTION-GUIDE.html](NOTION-GUIDE.html)
 
 ### Q10: Do Notion and Obsidian/Feishu conflict?
 
-**A:** No conflict! Three save targets are completely independent. You can enable all platforms simultaneously, save to multiple places with one click. Any platform save failure won't affect other platforms.
+**A:** No conflict! All save targets (Obsidian, Feishu, Notion, SiYuan Note, HTML Export) are completely independent. You can enable all platforms simultaneously, save to multiple places with one click. Any platform save failure won't affect other platforms.
+
+### Q11: SiYuan Note save failed?
+
+**A:** Please check in this order:
+1. Is SiYuan Note desktop client running
+2. Is the API URL correct (default `http://127.0.0.1:6806`)
+3. Is the Notebook ID filled in correctly (format: `YYYYMMDDHHMMSS-xxxxxxx`)
+4. If access authorization is enabled, is the API Token correct
+5. Check if firewall is blocking local connections
+
+> See [SiYuan Note Configuration Guide](docs/siyuan-guide.html) for details
+
+### Q12: Can't find the document after saving to SiYuan Note?
+
+**A:** Documents are saved under `{Notebook}/{Save Path}/{Site Name}/` directory. You can:
+1. Refresh the file tree in the left panel of SiYuan Note
+2. Use global search (`Ctrl+P`) to search for the post title
+3. Verify that the save path setting is correct
 
 ---
 
@@ -710,6 +783,43 @@ See [NOTION-GUIDE.html](NOTION-GUIDE.html)
 - **Optimize**: Notion batching - 100 blocks per batch, follows API limits
 - **Optimize**: Feishu large files - Supports extra-long content upload
 
+### v4.2.2 (2026-03-14)
+
+- **New**: Document embedding support
+  - PDF files: embedded preview via iframe, viewable directly in Obsidian
+  - Word documents (.doc/.docx): download links with document icon
+  - Excel spreadsheets (.xls/.xlsx/.csv): download links with spreadsheet icon
+  - PPT presentations (.ppt/.pptx): download links with presentation icon
+  - SVG images: embedded directly as images
+  - Plain text files (.txt/.rtf): download links with text icon
+  - OpenDocument formats (.odt/.ods/.odp): download links with corresponding icons
+- **New**: Audio embedding support
+  - Supported formats: MP3, WAV, OGG, M4A, FLAC, AAC, WebM
+  - Embedded using HTML5 `<audio>` tag, playable directly in Obsidian
+- **New**: HTML5 media tag processing
+  - Recognizes existing `<audio>` and `<video>` tags in forum posts
+  - Automatically converts to playable embedded format
+
+### v4.2.1 (2026-03-14)
+
+- **Optimize**: Feishu multi-line text field content optimization
+  - Removed image links (too space-consuming), only keeping `[Image: alt]` markers
+  - Removed plain web links, only keeping link text
+  - Preserved valuable links (videos, code repos, forums, etc.)
+- **New**: Valuable link whitelist
+  - Video platforms: YouTube, Bilibili, Vimeo, Youku, iQiyi, QQ Video, Douyin, TikTok, Xigua Video
+  - Code repositories: GitHub, GitLab, Gitee, Bitbucket, Codeberg
+  - Forum sites: linux.do, meta.discourse.org, community.openai.com, forum.cursor.com, etc.
+  - Technical resources: StackOverflow, Gist, CodeSandbox, CodePen, Replit
+  - Research resources: HuggingFace, Kaggle, arXiv, DOI
+- **Optimize**: Content cleaning enhancement
+  - Auto-remove invisible control characters and zero-width characters
+  - Standardize line breaks (unified to `\n`)
+  - Remove consecutive multiple line breaks (max 2 kept)
+  - Remove excess spaces
+  - Auto-truncate extra-long content (100K character limit)
+- **New**: Feishu error code 1254060 friendly prompt
+
 ### v4.0.5 (2026-03-14)
 
 - **New**: Multi-language support (Chinese/English)
@@ -735,6 +845,26 @@ See [NOTION-GUIDE.html](NOTION-GUIDE.html)
   - Added QQ Video `v.qq.com` parsing
   - Added Xigua Video `ixigua.com/iframe/` parsing
   - Added Facebook `facebook.com/plugins/video` parsing
+
+### v4.0.4 (2026-03-13)
+
+- **New**: Enhanced video platform support
+  - New iframe embeds: Youku, TikTok, Tencent Video, Xigua Video, Facebook
+  - New link formats: Douyin, X/Twitter (no iframe support)
+  - Created universal video parsing functions `parseVideoUrl()` and `generateVideoEmbed()`
+- **Optimize**: Video thumbnail detection enhancement
+  - Added platform-specific CDN domain detection (ykimg, douyinpic, tiktokcdn, twimg, fbcdn, etc.)
+  - Added platform-specific class detection (youku-thumbnail, douyin-thumbnail, etc.)
+- **Fix**: Video onebox directly converts to iframe, non-video onebox shows preview card
+- **Fix**: Bilibili onebox thumbnail loss issue
+
+### v4.0.3 (2026-03-12)
+
+- **New**: Online video links auto-convert to iframe embeds (YouTube, Bilibili, Vimeo)
+- **New**: Onebox link preview optimization with title, description, and thumbnail
+- **New**: Notion video embedding support (YouTube, Bilibili, Vimeo converted to video blocks)
+- **New**: Notion link preview support (bookmark blocks)
+- **Optimize**: iframe responsive sizing (width:100%; aspect-ratio:16/9)
 
 ### v4.0.2 (2026-03-12)
 
@@ -785,7 +915,39 @@ See [NOTION-GUIDE.html](NOTION-GUIDE.html)
   - Custom site management interface
   - Advanced URI auto-prompt
 
-[... Previous version history omitted for brevity ...]
+### v3.5.13 (2026-03-11)
+
+- **New**: Comprehensive error prompt system
+  - 40+ Feishu error code mappings with detailed descriptions and solutions
+  - HTTP error code friendly prompts (400/401/403/404/429/500/502/503)
+  - Config parameter format validation (App ID, App Secret, app_token, table_id)
+- **New**: [Feishu Configuration Guide HTML Version](FEISHU-GUIDE.html) - more intuitive setup tutorial
+- **Optimize**: Clearer app_token and table_id explanations
+- **Optimize**: Test connection shows all detected fields on success
+- **Optimize**: UI text updates (bookmark button → link button, double-click to copy link)
+- **Optimize**: Mac keyboard shortcut support (⌘+Shift+S)
+
+### v3.5.12 (2026-03-11)
+
+- **New**: Feishu field validation - auto-checks 9 required fields during test connection
+- **New**: Detailed field error prompts (missing fields, type errors)
+- **New**: FEISHU-FIELD-VALIDATION.md documentation
+
+### v3.5.0 - v3.5.11 (2026-03-11)
+
+- **New**: Feishu Bitable integration
+- **New**: MD file attachment upload
+- **New**: Save target selection (Obsidian/Feishu/both)
+- **New**: Single click save / double click copy separation
+- **New**: Plugin toggle switch
+- **New**: Comment link support - click comment link to save post + that comment
+- **New**: Floor number identification (Obsidian: `Title-Floor X.md` / Feishu: `Title [Floor X]`)
+- **New**: Feishu API version selection (domestic/Lark international)
+- **Fix**: Comment floor number extraction from `.topic-post` `data-post-number`
+- **Fix**: Duplicate record prevention in Feishu
+- **Fix**: Double-click detection race condition
+- **Fix**: False trigger prevention with strict area detection
+- **Optimize**: Save time format changed to Beijing time
 
 ---
 
@@ -837,7 +999,9 @@ Plugin directory discourse-saver contains the following files:
 
 ## License
 
-MIT License
+MIT License - Fully open source, free to use, modify, and distribute.
+
+**Attribution Request for Derivative Works:** If you create derivative works based on this project, we appreciate (but do not require) retaining attribution to the original project ([AchengBusiness/discourse-saver](https://github.com/AchengBusiness/discourse-saver)). Thank you for your respect.
 
 ---
 
@@ -847,5 +1011,6 @@ MIT License
 - [Obsidian](https://obsidian.md)
 - [Feishu Open Platform](https://open.feishu.cn)
 - [Notion](https://www.notion.so)
+- [SiYuan Note](https://b3log.org/siyuan/)
 - [Turndown](https://github.com/mixmark-io/turndown)
 - [Advanced URI](https://github.com/Vinzent03/obsidian-advanced-uri)

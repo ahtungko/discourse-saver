@@ -1,18 +1,18 @@
-# Discourse Saver V4.6.24
+# Discourse Saver V5.1
 
 **中文 | [English](README_EN.md)**
 
-通用 Discourse 论坛内容保存工具 - 一键保存任意 Discourse 论坛（如 LinuxDo、Discourse Meta、Rust Users 等数百个站点）的帖子和评论到 Obsidian、Notion 或 HTML 文件。
+通用 Discourse 论坛内容保存工具 - 一键保存任意 Discourse 论坛（如 LinuxDo、Discourse Meta、Rust Users 等数百个站点）的帖子和评论到 Obsidian、飞书多维表格、Notion、思源笔记，或导出为 HTML 文件。
 
 支持 **Chrome 扩展** 和 **油猴脚本（Tampermonkey）** 两种安装方式。
 
-> **V4.6.24 更新**：
-> - **油猴脚本版** - 支持 Tampermonkey/Greasemonkey，跨浏览器通用（Chrome/Edge/Firefox/Safari）
-> - **HTML 导出增强** - 图片 Lightbox 放大、表格全屏/复制、5 种主题切换
-> - **评论用户名超链接** - 评论区用户名支持点击跳转到用户主页
-> - **PWA 支持** - 可安装到设备主屏幕，离线查看
-> - **PDF 导出** - 工具栏一键导出为 PDF 文件
-> - **40+ Discourse 论坛支持** - 通过 @match 和通配符匹配
+> **V5.1 更新**：
+> - **思源笔记支持** - 通过本地内核 API 保存帖子到思源笔记
+> - **Tab 标签页布局** - 设置页面重构为清晰的标签页导航
+> - **三种主题模式** - 支持浅色/深色/跟随系统主题切换
+> - **路径规范化** - 跨平台路径处理，支持 Windows/Mac/Linux
+> - **HTML 导出增强** - 图片 Lightbox、表格全屏/复制、5 种主题、PWA、PDF 导出
+> - **油猴脚本版** - 支持 Tampermonkey/Greasemonkey，跨浏览器通用
 
 ## 浏览器支持
 
@@ -185,16 +185,16 @@
 
 | 操作 | 效果 |
 |-----|------|
-| **单击** 主帖链接按钮 | 保存主帖到 Obsidian/飞书 |
+| **单击** 主帖链接按钮 | 保存主帖到 Obsidian/飞书/Notion/思源笔记 |
 | **单击** 评论链接按钮 | 保存主帖 + 该评论（文件名：`标题-X楼.md`） |
 | **双击** 链接按钮 | 复制链接到剪贴板 |
 | **Ctrl+Shift+S**（Mac: **⌘+Shift+S**）| 快捷键保存主帖 |
 
 ---
 
-## V4.6.24 新功能
+## V5.1 新功能
 
-### 油猴脚本版（V4.6.24）
+### 油猴脚本版（V5.1）
 
 | 特性 | 说明 |
 |-----|------|
@@ -307,7 +307,7 @@
 1. 访问任意 **Discourse 论坛**（LinuxDo、Discourse Meta 等）帖子页面
 2. 插件会**自动检测**并激活（首次访问会显示提示）
 3. 找到帖子/评论右下角的**链接按钮**（链条图标）
-4. **单击** → 保存到 Obsidian/飞书
+4. **单击** → 保存到已启用的平台（Obsidian/飞书/Notion/思源笔记）
 5. **双击** → 复制链接到剪贴板
 
 ### 文件命名规则
@@ -354,6 +354,8 @@
 | 保存到 Obsidian | 启用 Obsidian 保存 |
 | 保存到飞书多维表格 | 启用飞书同步 |
 | 保存到 Notion Database | 启用 Notion 同步（V4.0.1）|
+| 保存到思源笔记 | 启用思源笔记同步（V5.1）|
+| 导出 HTML 文件 | 保存为独立 HTML 文件（V4.3.5）|
 
 ### Obsidian 设置
 
@@ -362,6 +364,36 @@
 | Vault 名称 | 留空使用当前打开的 vault（推荐） |
 | 保存文件夹 | 保存到 vault 中的哪个文件夹 |
 | 使用 Advanced URI | 支持大内容保存（推荐开启） |
+
+#### 下载图片/视频到 Vault 文件夹（新功能）
+
+勾选「下载图片/视频到 Vault 文件夹」后，保存帖子时会自动将图片和视频下载到 Obsidian Vault 本地，Markdown 中的链接会自动替换为本地路径。
+
+**前置条件：必须安装并配置 Obsidian 社区插件「Local REST API」**
+
+**第一步：安装 Local REST API 插件**
+1. 打开 Obsidian → 设置 → 第三方插件 → 浏览社区插件
+2. 搜索 **Local REST API**，安装并启用
+
+**第二步：启用 HTTP 服务（关键步骤）**
+1. 打开 Obsidian → 设置 → 第三方插件 → Local REST API
+2. 找到 **「Enable Non-encrypted (HTTP) Server」** 选项
+3. **将此开关打开**（默认是关闭的）
+4. 启用后 HTTP 端口为 **27123**（默认）
+
+> 为什么必须开启 HTTP？因为 Chrome 扩展无法访问自签名 HTTPS 证书，必须使用 HTTP 端口才能正常连接。此服务仅在本机运行，不会暴露到外网，安全无虞。
+
+**第三步：在 Discourse Saver 中配置**
+1. 打开扩展设置 → Obsidian 标签页
+2. 勾选「下载图片/视频到 Vault 文件夹」
+3. 填入 **API Key**（在 Local REST API 插件设置页面复制）
+4. 端口填 **27123**（HTTP 端口，不是默认的 27124）
+5. 点击「测试连接」确认成功
+
+**第四步：验证**
+- 测试连接显示绿色成功提示 → 配置完成
+- 如果显示「Failed to fetch」→ 检查是否已开启 HTTP 服务（第二步）
+- 点击「查看日志」可以看到详细的连接诊断信息
 
 ### 飞书设置
 
@@ -394,6 +426,28 @@
 | 评论数 | Number | |
 
 > **详细配置教程**：请参考 [NOTION-GUIDE.html](NOTION-GUIDE.html)
+
+### 思源笔记设置（V5.1）
+
+| 配置项 | 说明 |
+|-------|------|
+| API 地址 | 思源笔记内核 API 地址，默认 `http://127.0.0.1:6806` |
+| API Token | 思源笔记访问授权码（未开启鉴权可留空） |
+| 笔记本 ID | 目标笔记本的 ID（格式：`20210808180117-czj9bvb`） |
+| 保存路径 | 笔记本中的保存位置，默认 `/Discourse收集箱` |
+
+**使用前提：**
+1. 思源笔记桌面客户端必须处于运行状态
+2. 笔记本 ID 为必填项（右键笔记本 → 设置 中获取）
+3. 如开启了访问授权码，需填写 API Token
+
+> **详细配置教程**：请参考 [思源笔记配置指南](docs/siyuan-guide.html)
+
+### HTML 导出设置（V4.3.5）
+
+| 配置项 | 说明 |
+|-------|------|
+| 导出文件夹名 | HTML 文件保存的文件夹名称，默认 `Discourse导出` |
 
 ### 内容设置
 
@@ -677,7 +731,25 @@
 
 ### Q10: Notion 和 Obsidian/飞书冲突吗？
 
-**A:** 不冲突！三个保存目标完全独立。你可以同时启用所有平台，一键保存到多个地方。任何一个平台保存失败不会影响其他平台。
+**A:** 不冲突！所有保存目标（Obsidian、飞书、Notion、思源笔记、HTML 导出）完全独立。你可以同时启用所有平台，一键保存到多个地方。任何一个平台保存失败不会影响其他平台。
+
+### Q11: 思源笔记保存失败？
+
+**A:** 请按以下顺序检查：
+1. 思源笔记桌面客户端是否正在运行
+2. API 地址是否正确（默认 `http://127.0.0.1:6806`）
+3. 笔记本 ID 是否正确填写（格式为 `YYYYMMDDHHMMSS-xxxxxxx`）
+4. 如果开启了访问授权码，API Token 是否正确填写
+5. 检查防火墙是否阻止了本地连接
+
+> 详见 [思源笔记配置指南](docs/siyuan-guide.html)
+
+### Q12: 思源笔记保存后找不到文档？
+
+**A:** 文档保存在 `{笔记本}/{保存路径}/{站点名}/` 目录下。可以：
+1. 在思源笔记左侧文件树中刷新查看
+2. 使用全局搜索（`Ctrl+P`）搜索帖子标题
+3. 检查保存路径设置是否正确
 
 ---
 
@@ -981,7 +1053,9 @@
 
 ## 许可证
 
-MIT License
+MIT License - 完全开源，自由使用、修改和分发。
+
+**二次开发署名期望：** 如果你基于本项目进行二次开发或衍生作品，希望能保留原始项目的署名信息（[acheng-byte/discourse-saver](https://github.com/acheng-byte/discourse-saver)）。这不是强制要求，但非常感谢你的尊重。
 
 ---
 
@@ -991,5 +1065,6 @@ MIT License
 - [Obsidian](https://obsidian.md)
 - [飞书开放平台](https://open.feishu.cn)
 - [Notion](https://www.notion.so)
+- [思源笔记](https://b3log.org/siyuan/)
 - [Turndown](https://github.com/mixmark-io/turndown)
 - [Advanced URI](https://github.com/Vinzent03/obsidian-advanced-uri)
