@@ -570,12 +570,21 @@ function saveOptions(e) {
   });
 }
 
-// 恢复默认
+// 恢复默认（彻底清除所有数据，恢复到刚安装状态）
 function resetOptions() {
-  if (confirm('确定恢复默认设置？飞书配置也会被清空。')) {
-    chrome.storage.sync.set(DEFAULT_CONFIG, () => {
-      loadOptions();
-      showStatus('已恢复默认设置', 'success');
+  if (confirm('确定恢复默认设置？所有配置（飞书、Notion、语雀、自定义站点等）都会被清空，恢复到插件刚安装时的状态。')) {
+    // 先彻底清除 sync 和 local 存储
+    chrome.storage.sync.clear(() => {
+      chrome.storage.local.clear(() => {
+        // 再写入默认配置
+        chrome.storage.sync.set(DEFAULT_CONFIG, () => {
+          loadOptions();
+          // 清空自定义站点列表UI
+          const sitesList = document.getElementById('customSitesList');
+          if (sitesList) sitesList.innerHTML = '';
+          showStatus('已恢复默认设置，所有数据已清除', 'success');
+        });
+      });
     });
   }
 }
@@ -797,6 +806,21 @@ document.addEventListener('DOMContentLoaded', () => {
   // 语言切换按钮事件
   document.getElementById('lang-zh').addEventListener('click', () => setLanguage('zh'));
   document.getElementById('lang-en').addEventListener('click', () => setLanguage('en'));
+
+  // Tab 切换事件
+  document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetTab = btn.getAttribute('data-tab');
+      // 移除所有 tab-btn 的 active
+      document.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.classList.remove('active'));
+      // 移除所有 tab-panel 的 active
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      // 激活当前
+      btn.classList.add('active');
+      const panel = document.getElementById('tab-' + targetTab);
+      if (panel) panel.classList.add('active');
+    });
+  });
 
   // 绑定折叠/展开事件（使用事件监听器，避免 Chrome 扩展 CSP 限制）
   document.querySelectorAll('.section-header[data-section]').forEach(header => {
