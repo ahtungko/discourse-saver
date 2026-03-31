@@ -164,24 +164,20 @@
     });
   }
 
+  // 安全获取 className（SVG 元素的 className 是 SVGAnimatedString 对象，不是字符串）
+  function safeClassName(el) {
+    if (!el) return '';
+    if (typeof el.className === 'string') return el.className;
+    return el.getAttribute('class') || '';
+  }
+
   // 检查是否在帖子页面
   function isTopicPage() {
     return document.querySelector('#topic-title h1') !== null;
   }
 
-  // 判断是否为帖子/评论区域的链接按钮，返回 { isLink: boolean, postNumber: string|null }
-  // V3.5.7: 改为检测链接按钮（原书签按钮）
-  // V3.5.8: 修复误触发问题 - 必须在帖子容器内 + 链接按钮特征
-  // V3.5.9: 增强检测 - 使用 data-share-url 属性（Discourse 标准分享按钮特征）
   function isLinkButton(element) {
     if (!element) return { isLink: false, postNumber: null };
-
-    // 安全获取 className（SVG 元素的 className 是 SVGAnimatedString 对象）
-    function safeClassName(el) {
-      if (!el) return '';
-      if (typeof el.className === 'string') return el.className;
-      return el.getAttribute('class') || '';
-    }
 
     // 必须在帖子页面上
     if (!isTopicPage()) {
@@ -829,7 +825,7 @@
     turndownService.addRule('onebox', {
       filter: (node) => {
         if (node.nodeName !== 'ASIDE') return false;
-        const className = node.className || '';
+        const className = safeClassName(node);
         return className.includes('onebox') || className.includes('quote');
       },
       replacement: (content, node) => {
@@ -899,7 +895,7 @@
         const code = clonedCode.textContent;
 
         // 获取语言标识（从 class 或 data-code-wrap 属性）
-        const langFromClass = codeNode.className.match(/lang-(\w+)/);
+        const langFromClass = safeClassName(codeNode).match(/lang-(\w+)/);
         const langFromData = node.getAttribute('data-code-wrap');
         const lang = langFromClass ? langFromClass[1] : (langFromData || '');
 
@@ -957,7 +953,7 @@
     turndownService.addRule('videoThumbnailContainer', {
       filter: (node) => {
         if (node.nodeName !== 'DIV') return false;
-        const className = node.className || '';
+        const className = safeClassName(node);
         return className.includes('video-thumbnail');
       },
       replacement: (content, node) => {
@@ -982,8 +978,8 @@
     turndownService.addRule('removeVideoThumbnails', {
       filter: (node) => {
         if (node.nodeName !== 'IMG') return false;
-        const className = node.className || '';
-        const parentClassName = node.parentElement?.className || '';
+        const className = safeClassName(node);
+        const parentClassName = safeClassName(node.parentElement);
         const src = node.src || '';
 
         // 如果父元素已经是 video-thumbnail，跳过（由上面的规则处理）
@@ -1054,7 +1050,7 @@
     turndownService.addRule('emojiAndGifImages', {
       filter: (node) => {
         if (node.nodeName !== 'IMG') return false;
-        const className = node.className || '';
+        const className = safeClassName(node);
         const src = node.src || '';
         const alt = node.alt || '';
         // emoji图片
@@ -1234,7 +1230,7 @@
         // 只处理span元素
         if (node.nodeName !== 'SPAN') return false;
         const text = node.textContent?.trim() || '';
-        const className = node.className || '';
+        const className = safeClassName(node);
         // 匹配meta class或纯尺寸信息文本
         if (className.includes('meta') || className.includes('image-size-info')) return true;
         // 仅当文本是纯尺寸信息时才移除（如 "1920×1080 180 KB"）
@@ -1554,7 +1550,7 @@
         filter: (node) => {
           if (node.nodeName !== 'IMG') return false;
           const src = node.src || '';
-          const className = node.className || '';
+          const className = safeClassName(node);
           // 匹配 GIF 图片
           return src.includes('.gif') || className.includes('animated');
         },
