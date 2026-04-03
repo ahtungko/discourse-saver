@@ -105,7 +105,7 @@
     downloadImages: false,
     downloadVideos: true,
     restApiKey: '',
-    restApiPort: 27124,
+    restApiPort: 27123,
     mediaFolderName: 'media',
 
     // 语雀设置
@@ -1939,6 +1939,8 @@ tags: [${tagsStr}]
 
         try {
           await navigator.clipboard.writeText(markdown);
+          // V5.3.2: 等待系统剪贴板提交，避免 Obsidian 读到旧内容
+          await new Promise(resolve => setTimeout(resolve, 150));
 
           // 构建 Advanced URI
           let advancedUri = 'obsidian://advanced-uri?' + vaultParam;
