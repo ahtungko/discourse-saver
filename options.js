@@ -616,6 +616,47 @@ function resetOptions() {
   );
 }
 
+// V5.3.2: 导出配置
+function exportConfig() {
+  chrome.storage.sync.get(null, (config) => {
+    const json = JSON.stringify(config, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const date = new Date().toISOString().slice(0, 10);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `discourse-saver-config-${date}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showStatus('配置已导出', 'success');
+  });
+}
+
+// V5.3.2: 导入配置
+function importConfig(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const config = JSON.parse(e.target.result);
+      if (typeof config !== 'object' || config === null || !('pluginEnabled' in config)) {
+        showStatus('无效的配置文件：缺少必要字段', 'error');
+        return;
+      }
+      chrome.storage.sync.set(config, () => {
+        if (chrome.runtime.lastError) {
+          showStatus('导入失败: ' + chrome.runtime.lastError.message, 'error');
+          return;
+        }
+        loadOptions();
+        showStatus('配置已导入，页面已刷新', 'success');
+      });
+    } catch (err) {
+      showStatus('配置文件格式错误: ' + err.message, 'error');
+    }
+  };
+  reader.readAsText(file);
+}
+
 // 自定义确认弹窗（替代浏览器原生 confirm）
 function showConfirmDialog(message, onConfirm) {
   const overlay = document.createElement('div');
@@ -1100,6 +1141,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 恢复默认
   document.getElementById('resetBtn').addEventListener('click', resetOptions);
+
+  // V5.3.2: 导出/导入配置
+  document.getElementById('exportBtn').addEventListener('click', exportConfig);
+  document.getElementById('importBtn').addEventListener('click', () => {
+    document.getElementById('importFileInput').click();
+  });
+  document.getElementById('importFileInput').addEventListener('change', (e) => {
+    if (e.target.files[0]) {
+      importConfig(e.target.files[0]);
+      e.target.value = '';
+    }
+  });
 
   // 测试飞书连接
   document.getElementById('testFeishuBtn').addEventListener('click', testFeishuConnection);

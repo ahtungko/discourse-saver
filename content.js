@@ -1455,15 +1455,15 @@
         for (const result of response.results) {
           if (result.success && result.relativePath) {
             const escapedUrl = result.originalUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            // 替换图片语法中的URL
+            // V5.3.2: 替换为 Obsidian Wiki 引用格式 ![[path]]
             processedMarkdown = processedMarkdown.replace(
-              new RegExp(`(!\\[[^\\]]*\\])\\(${escapedUrl}\\)`, 'g'),
-              `$1(${result.relativePath})`
+              new RegExp(`!\\[[^\\]]*\\]\\(${escapedUrl}\\)`, 'g'),
+              `![[${result.relativePath}]]`
             );
-            // 替换裸视频URL
+            // 替换裸视频URL为Wiki引用
             processedMarkdown = processedMarkdown.replace(
               new RegExp(escapedUrl, 'g'),
-              result.relativePath
+              `![[${result.relativePath}]]`
             );
             successCount++;
           }
@@ -1874,12 +1874,12 @@ tags: [${tagsStr}]
         effectiveConfig
       );
 
-      // V5.3: 后台静默下载媒体到Vault（不阻塞保存流程）
+      // V5.3.2: 下载媒体到Vault并替换为Wiki引用（await等待完成，确保markdown中是本地路径）
       console.log('[Discourse Saver] 媒体下载检查: downloadImages=' + config.downloadImages + ', restApiKey=' + (config.restApiKey ? '已设置(' + config.restApiKey.length + '字符)' : '未设置'));
       if (config.downloadImages && config.restApiKey) {
-        rlog('INFO', '后台下载媒体到Vault, port=' + (config.restApiPort || 27124));
-        // 不 await，后台静默下载，不阻塞保存
-        fireAndForgetMediaDownload(markdown, config);
+        rlog('INFO', '下载媒体到Vault, port=' + (config.restApiPort || 27123));
+        showNotification('正在下载媒体文件到Vault...', 'info');
+        markdown = await downloadAndReplaceMedia(markdown, config);
       } else if (config.downloadImages && !config.restApiKey) {
         console.warn('[Discourse Saver] 已勾选下载媒体但未填写 REST API Key');
         rlog('WARN', '媒体下载跳过: 未填写 REST API Key');

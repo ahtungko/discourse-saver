@@ -293,7 +293,9 @@ const i18n = {
       testing: '测试中...',
       addSite: '添加站点',
       add: '添加',
-      reset: '恢复默认'
+      reset: '恢复默认',
+      exportConfig: '导出配置',
+      importConfig: '导入配置'
     },
     messages: {
       saveSuccess: '设置已保存',
@@ -635,7 +637,9 @@ const i18n = {
       testing: 'Testing...',
       addSite: 'Add Site',
       add: 'Add',
-      reset: 'Reset to Default'
+      reset: 'Reset to Default',
+      exportConfig: 'Export Config',
+      importConfig: 'Import Config'
     },
     messages: {
       saveSuccess: 'Settings saved',
