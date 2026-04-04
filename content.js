@@ -1874,7 +1874,10 @@ tags: [${tagsStr}]
         effectiveConfig
       );
 
-      // V5.3.2: 下载媒体到Vault并替换为Wiki引用（await等待完成，确保markdown中是本地路径）
+      // V5.3.2: 保留原始markdown（原链接），供飞书/Notion/HTML等非OB平台使用
+      const originalMarkdown = markdown;
+
+      // V5.3.2: 下载媒体到Vault并替换为Wiki引用（仅用于Obsidian）
       console.log('[Discourse Saver] 媒体下载检查: downloadImages=' + config.downloadImages + ', restApiKey=' + (config.restApiKey ? '已设置(' + config.restApiKey.length + '字符)' : '未设置'));
       if (config.downloadImages && config.restApiKey) {
         rlog('INFO', '下载媒体到Vault, port=' + (config.restApiPort || 27123));
@@ -2016,7 +2019,7 @@ tags: [${tagsStr}]
         // 使用 setTimeout 让 UI 有时间显示加载提示
         setTimeout(() => {
           try {
-            const htmlContent = convertMarkdownToHtml(markdown, {
+            const htmlContent = convertMarkdownToHtml(originalMarkdown, {
               title: title,
               author: author,
               url: url,
@@ -2130,7 +2133,7 @@ tags: [${tagsStr}]
         let feishuHtmlContent = null;
         if (config.feishuUploadHtml) {
           try {
-            feishuHtmlContent = convertMarkdownToHtml(markdown, {
+            feishuHtmlContent = convertMarkdownToHtml(originalMarkdown, {
               title: feishuTitle,
               author: author,
               url: feishuUrl
@@ -2157,7 +2160,7 @@ tags: [${tagsStr}]
             title: feishuTitle,
             url: feishuUrl,
             author: author,
-            content: markdown,
+            content: originalMarkdown,
             htmlContent: feishuHtmlContent,  // V4.2.6: HTML 内容
             category: category || '',        // V4.3.7: 分类
             tags: tags || [],                // V4.3.7: 标签
@@ -2207,7 +2210,7 @@ tags: [${tagsStr}]
             title: notionTitle,
             url: notionUrl,
             author: author,
-            content: markdown,
+            content: originalMarkdown,
             category: category || '',
             tags: tags || [],
             commentCount: comments.length
@@ -2257,7 +2260,7 @@ tags: [${tagsStr}]
             title: yuqueTitle,
             url: yuqueUrl,
             author: author,
-            content: markdown,
+            content: originalMarkdown,
             category: category || '',
             tags: tags || [],
             commentCount: comments.length
@@ -2301,7 +2304,7 @@ tags: [${tagsStr}]
           data: {
             title: siyuanTitle,
             url: siyuanUrl,
-            markdown: markdown,
+            markdown: originalMarkdown,
             author: author,
             commentCount: comments.length
           }
