@@ -203,6 +203,7 @@
   }
 
   // V5.4.0: 悬浮保存按钮（替代链接拦截）
+  // V5.4.1: 长按弹出操作菜单，支持指定楼层保存
   let floatingBtnAdded = false;
 
   function createFloatingButton() {
@@ -212,7 +213,7 @@
 
     const btn = document.createElement('div');
     btn.id = 'ds-fab';
-    btn.title = 'Discourse Saver - 点击保存帖子';
+    btn.title = '点击保存整帖 | 长按更多操作';
     btn.innerHTML = `
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
@@ -252,22 +253,108 @@
         background: #f0ad4e;
         animation: ds-fab-pulse 0.8s infinite;
       }
+      #ds-fab.ds-fab-longpress {
+        background: #5cb85c;
+        transform: scale(1.2);
+      }
       @keyframes ds-fab-pulse {
         0%, 100% { transform: scale(1); }
         50% { transform: scale(1.15); }
       }
+      #ds-fab-menu {
+        position: fixed;
+        z-index: 2147483647;
+        background: #fff;
+        border-radius: 10px;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.25);
+        padding: 12px;
+        min-width: 200px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-size: 14px;
+        color: #333;
+      }
+      #ds-fab-menu .ds-menu-title {
+        font-weight: 600;
+        margin-bottom: 10px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #eee;
+        color: #4a90d9;
+        font-size: 13px;
+      }
+      #ds-fab-menu .ds-menu-item {
+        padding: 8px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: background 0.15s;
+      }
+      #ds-fab-menu .ds-menu-item:hover {
+        background: #f0f4f8;
+      }
+      #ds-fab-menu .ds-menu-item svg {
+        flex-shrink: 0;
+        width: 16px;
+        height: 16px;
+      }
+      #ds-fab-menu .ds-menu-divider {
+        height: 1px;
+        background: #eee;
+        margin: 6px 0;
+      }
+      #ds-fab-menu .ds-floor-input {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+      }
+      #ds-fab-menu .ds-floor-input input {
+        width: 60px;
+        padding: 4px 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 14px;
+        text-align: center;
+        outline: none;
+      }
+      #ds-fab-menu .ds-floor-input input:focus {
+        border-color: #4a90d9;
+        box-shadow: 0 0 0 2px rgba(74,144,217,0.2);
+      }
+      #ds-fab-menu .ds-floor-btn {
+        padding: 4px 12px;
+        background: #4a90d9;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      #ds-fab-menu .ds-floor-btn:hover { background: #357abd; }
     `;
     document.head.appendChild(style);
     document.body.appendChild(btn);
 
-    // 拖拽逻辑
+    // 拖拽 + 长按逻辑
     let isDragging = false;
     let dragStartX, dragStartY, btnStartX, btnStartY;
     let hasMoved = false;
+    let longPressTimer = null;
+    let isLongPress = false;
+
+    function clearLongPress() {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+      btn.classList.remove('ds-fab-longpress');
+    }
 
     btn.addEventListener('mousedown', (e) => {
       isDragging = true;
       hasMoved = false;
+      isLongPress = false;
       dragStartX = e.clientX;
       dragStartY = e.clientY;
       const rect = btn.getBoundingClientRect();
@@ -276,16 +363,27 @@
       btn.style.cursor = 'grabbing';
       btn.style.transition = 'none';
       e.preventDefault();
+
+      // 长按计时（800ms）
+      longPressTimer = setTimeout(() => {
+        if (!hasMoved) {
+          isLongPress = true;
+          btn.classList.add('ds-fab-longpress');
+          showFabMenu(btn);
+        }
+      }, 800);
     });
 
     document.addEventListener('mousemove', (e) => {
       if (!isDragging) return;
       const dx = e.clientX - dragStartX;
       const dy = e.clientY - dragStartY;
-      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) hasMoved = true;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        hasMoved = true;
+        clearLongPress();
+      }
       let newX = btnStartX + dx;
       let newY = btnStartY + dy;
-      // 边界限制
       const maxX = window.innerWidth - 50;
       const maxY = window.innerHeight - 50;
       newX = Math.max(0, Math.min(newX, maxX));
@@ -298,15 +396,16 @@
     document.addEventListener('mouseup', () => {
       if (!isDragging) return;
       isDragging = false;
+      clearLongPress();
       btn.style.cursor = 'grab';
       btn.style.transition = 'background 0.2s, transform 0.15s, box-shadow 0.2s';
     });
 
-    // 点击保存（非拖拽时）
+    // 点击保存（非拖拽、非长按时）
     btn.addEventListener('click', (e) => {
-      if (hasMoved) return; // 拖拽结束不触发
+      if (hasMoved || isLongPress) return;
       e.stopPropagation();
-      console.log('[Discourse Saver] 悬浮按钮点击，保存帖子');
+      console.log('[Discourse Saver] 悬浮按钮点击，保存整帖');
       rlog('INFO', '悬浮按钮触发保存');
       btn.classList.add('ds-fab-saving');
       saveToObsidian(null).finally(() => {
@@ -314,17 +413,26 @@
       });
     });
 
-    // 触屏拖拽支持
+    // 触屏拖拽 + 长按支持
     btn.addEventListener('touchstart', (e) => {
       const t = e.touches[0];
       isDragging = true;
       hasMoved = false;
+      isLongPress = false;
       dragStartX = t.clientX;
       dragStartY = t.clientY;
       const rect = btn.getBoundingClientRect();
       btnStartX = rect.left;
       btnStartY = rect.top;
       btn.style.transition = 'none';
+
+      longPressTimer = setTimeout(() => {
+        if (!hasMoved) {
+          isLongPress = true;
+          btn.classList.add('ds-fab-longpress');
+          showFabMenu(btn);
+        }
+      }, 800);
     }, { passive: true });
 
     document.addEventListener('touchmove', (e) => {
@@ -332,7 +440,10 @@
       const t = e.touches[0];
       const dx = t.clientX - dragStartX;
       const dy = t.clientY - dragStartY;
-      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) hasMoved = true;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        hasMoved = true;
+        clearLongPress();
+      }
       let newX = btnStartX + dx;
       let newY = btnStartY + dy;
       newX = Math.max(0, Math.min(newX, window.innerWidth - 50));
@@ -345,6 +456,7 @@
     document.addEventListener('touchend', () => {
       if (!isDragging) return;
       isDragging = false;
+      clearLongPress();
       btn.style.transition = 'background 0.2s, transform 0.15s, box-shadow 0.2s';
     });
 
@@ -352,8 +464,109 @@
     rlog('INFO', '悬浮按钮已创建');
   }
 
+  // V5.4.1: 悬浮按钮长按菜单
+  function showFabMenu(anchorBtn) {
+    // 关闭已有菜单
+    closeFabMenu();
+
+    const menu = document.createElement('div');
+    menu.id = 'ds-fab-menu';
+
+    menu.innerHTML = `
+      <div class="ds-menu-title">Discourse Saver</div>
+      <div class="ds-menu-item" data-action="save-all">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        <span>保存整个帖子</span>
+      </div>
+      <div class="ds-menu-divider"></div>
+      <div class="ds-floor-input">
+        <span>保存第</span>
+        <input type="number" id="ds-floor-num" min="2" placeholder="楼层" />
+        <span>楼</span>
+        <button class="ds-floor-btn" id="ds-floor-go">保存</button>
+      </div>
+    `;
+
+    document.body.appendChild(menu);
+
+    // 定位菜单：在按钮左侧弹出
+    const btnRect = anchorBtn.getBoundingClientRect();
+    const menuWidth = 220;
+    let menuLeft = btnRect.left - menuWidth - 10;
+    let menuTop = btnRect.top;
+    // 如果左边放不下，放右边
+    if (menuLeft < 10) {
+      menuLeft = btnRect.right + 10;
+    }
+    // 底部超出屏幕则上移
+    if (menuTop + 160 > window.innerHeight) {
+      menuTop = window.innerHeight - 170;
+    }
+    menu.style.left = menuLeft + 'px';
+    menu.style.top = menuTop + 'px';
+
+    // 保存整帖
+    menu.querySelector('[data-action="save-all"]').addEventListener('click', () => {
+      closeFabMenu();
+      anchorBtn.classList.add('ds-fab-saving');
+      saveToObsidian(null).finally(() => {
+        anchorBtn.classList.remove('ds-fab-saving');
+      });
+    });
+
+    // 楼层保存
+    const floorInput = menu.querySelector('#ds-floor-num');
+    const floorBtn = menu.querySelector('#ds-floor-go');
+
+    function doFloorSave() {
+      const floor = parseInt(floorInput.value);
+      if (!floor || floor < 1) {
+        floorInput.style.borderColor = '#d9534f';
+        floorInput.focus();
+        return;
+      }
+      closeFabMenu();
+      console.log('[Discourse Saver] 菜单指定楼层保存:', floor);
+      rlog('INFO', '菜单指定楼层保存: ' + floor);
+      anchorBtn.classList.add('ds-fab-saving');
+      const postNum = floor === 1 ? null : String(floor);
+      saveToObsidian(postNum).finally(() => {
+        anchorBtn.classList.remove('ds-fab-saving');
+      });
+    }
+
+    floorBtn.addEventListener('click', doFloorSave);
+    floorInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') doFloorSave();
+      if (e.key === 'Escape') closeFabMenu();
+    });
+
+    // 点击菜单外部关闭
+    setTimeout(() => {
+      document.addEventListener('click', closeFabMenuOnOutsideClick);
+    }, 100);
+
+    // 自动聚焦输入框
+    setTimeout(() => floorInput.focus(), 50);
+  }
+
+  function closeFabMenuOnOutsideClick(e) {
+    const menu = document.getElementById('ds-fab-menu');
+    const fab = document.getElementById('ds-fab');
+    if (menu && !menu.contains(e.target) && !fab.contains(e.target)) {
+      closeFabMenu();
+    }
+  }
+
+  function closeFabMenu() {
+    const menu = document.getElementById('ds-fab-menu');
+    if (menu) menu.remove();
+    document.removeEventListener('click', closeFabMenuOnOutsideClick);
+  }
+
   // V5.4.0: 移除悬浮按钮（离开帖子页面时）
   function removeFloatingButton() {
+    closeFabMenu();
     const btn = document.getElementById('ds-fab');
     if (btn) {
       btn.remove();
