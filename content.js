@@ -2059,30 +2059,69 @@ tags: [${tagsStr}]
       const isSingleCommentMode = !isMultiFloor && targetPostNumber && targetPostNumber !== '1';
 
       if (isMultiFloor) {
-        // 多楼层模式：提取指定的多个楼层评论，合并为一个文件
-        const floors = targetPostNumber;
-        showNotification(`正在提取 ${floors.length} 楼评论...`, 'info');
-        const notFound = [];
-        for (const floor of floors) {
-          if (String(floor) === '1') continue; // 主帖不当评论
-          const comment = extractSingleComment(String(floor));
-          if (comment) {
-            comments.push(comment);
-          } else {
-            notFound.push(floor);
+        // V5.4.2: 多楼层模式 — 通过API获取评论，按楼层号过滤
+        const floors = targetPostNumber.filter(f => f !== 1); // 主帖不当评论
+        if (floors.length === 0) {
+          showNotification('请输入2楼及以上的楼层号', 'warning');
+          return;
+        }
+        const maxFloor = Math.max(...floors);
+        showNotification(`正在通过API获取评论（最高${maxFloor}楼）...`, 'info');
+
+        let allComments = [];
+        if (topicId) {
+          try {
+            allComments = await extractCommentsViaAPI(
+              topicId, maxFloor, false,
+              (msg) => showNotification(msg, 'info')
+            );
+          } catch (apiErr) {
+            console.warn('[Discourse Saver] API获取失败，回退DOM:', apiErr);
           }
         }
+
+        // 按楼层号过滤
+        const floorSet = new Set(floors.map(String));
+        comments = allComments.filter(c => floorSet.has(c.position));
+
+        // DOM回退：API没拿到的楼层尝试从DOM补
+        if (comments.length < floors.length) {
+          const gotFloors = new Set(comments.map(c => c.position));
+          for (const floor of floors) {
+            if (!gotFloors.has(String(floor))) {
+              const domComment = extractSingleComment(String(floor));
+              if (domComment) comments.push(domComment);
+            }
+          }
+          comments.sort((a, b) => parseInt(a.position) - parseInt(b.position));
+        }
+
         if (comments.length === 0) {
           showNotification('未找到任何指定楼层的评论', 'error');
           return;
         }
+        const notFound = floors.filter(f => !comments.some(c => c.position === String(f)));
         if (notFound.length > 0) {
           showNotification(`${notFound.length} 楼未找到: ${notFound.slice(0, 5).join(',')}${notFound.length > 5 ? '...' : ''}`, 'warning');
+        } else {
+          showNotification(`已获取 ${comments.length} 楼评论`, 'info');
         }
       } else if (isSingleCommentMode) {
-        // 单条评论模式：提取指定楼层的评论
+        // 单条评论模式：先尝试DOM，失败后走API
         showNotification(`正在提取第${targetPostNumber}楼评论...`, 'info');
-        const singleComment = extractSingleComment(targetPostNumber);
+        let singleComment = extractSingleComment(targetPostNumber);
+        if (!singleComment && topicId) {
+          // DOM没找到（可能没加载到），走API
+          console.log(`[Discourse Saver] DOM未找到${targetPostNumber}楼，尝试API`);
+          try {
+            const apiComments = await extractCommentsViaAPI(
+              topicId, parseInt(targetPostNumber), false, null
+            );
+            singleComment = apiComments.find(c => c.position === targetPostNumber);
+          } catch (e) {
+            console.warn('[Discourse Saver] API回退失败:', e);
+          }
+        }
         if (singleComment) {
           comments = [singleComment];
         } else {
