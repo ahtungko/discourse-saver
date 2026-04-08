@@ -3403,7 +3403,9 @@ async function saveToSiyuan(config, data) {
           attrs: {
             'custom-source-url': data.url || '',
             'custom-author': data.author || '',
-            'custom-saved-by': 'Discourse Saver V5.3.2'
+            'custom-category': data.category || '',
+            'custom-tags': Array.isArray(data.tags) ? data.tags.join(', ') : (data.tags || ''),
+            'custom-saved-by': 'Discourse Saver V5.4.0'
           }
         })
       });

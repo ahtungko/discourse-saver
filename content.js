@@ -2251,6 +2251,8 @@ tags: [${tagsStr}]
             url: siyuanUrl,
             markdown: originalMarkdown,
             author: author,
+            category: category || '',
+            tags: tags || [],
             commentCount: comments.length
           }
         }).then(response => ({ target: 'siyuan', response }));
