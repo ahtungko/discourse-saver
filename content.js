@@ -632,11 +632,22 @@
 
   // 提取帖子内容
   function extractContent() {
-    const titleElement = document.querySelector('#topic-title h1');
-    const contentElement = document.querySelector('.topic-body .cooked');
-    const authorElement = document.querySelector('.topic-meta-data .creator a, .names .first a');
+    // 多选择器兼容不同 Discourse 主题和版本
+    const titleElement = document.querySelector('#topic-title h1') ||
+      document.querySelector('.topic-title h1') ||
+      document.querySelector('.fancy-title') ||
+      document.querySelector('h1[data-topic-id]') ||
+      document.querySelector('.header-title h1');
+    const contentElement = document.querySelector('.topic-body .cooked') ||
+      document.querySelector('.post-body .cooked') ||
+      document.querySelector('.topic-post:first-of-type .cooked') ||
+      document.querySelector('.cooked');
+    const authorElement = document.querySelector('.topic-meta-data .creator a, .names .first a') ||
+      document.querySelector('.topic-post:first-of-type .username a') ||
+      document.querySelector('.topic-meta-data a.username');
 
     if (!titleElement || !contentElement) {
+      console.warn('[Discourse Saver] extractContent 失败: title=', !!titleElement, 'content=', !!contentElement);
       return null;
     }
 
@@ -1996,10 +2007,19 @@ tags: [${tagsStr}]
       console.log('[Discourse Saver] UI语言:', uiLang);
       console.log('[Discourse Saver] 目标楼层:', targetPostNumber || '主帖');
 
-      // 提取正文内容
-      const extracted = extractContent();
+      // 提取正文内容（带重试，SPA页面内容可能延迟渲染）
+      let extracted = extractContent();
       if (!extracted) {
-        showNotification('无法提取帖子内容', 'error');
+        for (let retry = 1; retry <= 3; retry++) {
+          console.log(`[Discourse Saver] 内容提取失败，第${retry}次重试...`);
+          await new Promise(r => setTimeout(r, 500 * retry));
+          extracted = extractContent();
+          if (extracted) break;
+        }
+      }
+      if (!extracted) {
+        showNotification('无法提取帖子内容（页面可能未加载完成，请稍后再试）', 'error');
+        rlog('WARN', '内容提取失败: title=' + !!document.querySelector('#topic-title h1') + ' content=' + !!document.querySelector('.topic-body .cooked'));
         return;
       }
 
