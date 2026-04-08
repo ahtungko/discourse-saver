@@ -571,23 +571,20 @@
       console.log('[Discourse Saver] 菜单楼层保存:', floors);
       rlog('INFO', '菜单楼层保存: ' + floors.join(','));
       anchorBtn.classList.add('ds-fab-saving');
-      showNotification(`开始保存 ${floors.length} 楼...`, 'info');
 
-      // 逐楼顺序保存，每楼间隔300ms避免并发过多
-      let idx = 0;
-      function saveNext() {
-        if (idx >= floors.length) {
-          anchorBtn.classList.remove('ds-fab-saving');
-          if (floors.length > 1) showNotification(`已完成 ${floors.length} 楼保存`, 'success');
-          return;
-        }
-        const floor = floors[idx++];
-        const postNum = floor === 1 ? null : String(floor);
+      // V5.4.2: 多楼层合并为一个文件保存
+      if (floors.length === 1) {
+        // 单楼：按原逻辑
+        const postNum = floors[0] === 1 ? null : String(floors[0]);
         saveToObsidian(postNum).finally(() => {
-          setTimeout(saveNext, 300);
+          anchorBtn.classList.remove('ds-fab-saving');
+        });
+      } else {
+        // 多楼：传数组，合并为一个文件
+        saveToObsidian(floors).finally(() => {
+          anchorBtn.classList.remove('ds-fab-saving');
         });
       }
-      saveNext();
     }
 
     floorBtn.addEventListener('click', doFloorSave);
@@ -628,6 +625,35 @@
       floatingBtnAdded = false;
       console.log('[Discourse Saver] 悬浮按钮已移除（非帖子页面）');
     }
+  }
+
+  // V5.4.2: 将楼层数组格式化为简洁描述（用于文件名）
+  // [2,3,4,5] → "2至5楼"
+  // [2,3,5,8] → "2-3,5,8楼"
+  // [5] → "5楼"
+  function formatFloorRange(floors) {
+    if (floors.length === 0) return '';
+    if (floors.length === 1) return floors[0] + '楼';
+    const sorted = [...floors].sort((a, b) => a - b);
+    // 如果是完全连续的
+    if (sorted[sorted.length - 1] - sorted[0] === sorted.length - 1) {
+      return `${sorted[0]}至${sorted[sorted.length - 1]}楼`;
+    }
+    // 分段压缩：连续的用-，不连续的用逗号
+    const parts = [];
+    let start = sorted[0], prev = sorted[0];
+    for (let i = 1; i <= sorted.length; i++) {
+      if (i < sorted.length && sorted[i] === prev + 1) {
+        prev = sorted[i];
+      } else {
+        parts.push(start === prev ? String(start) : `${start}-${prev}`);
+        if (i < sorted.length) { start = sorted[i]; prev = sorted[i]; }
+      }
+    }
+    // 文件名太长时截断
+    let desc = parts.join(',');
+    if (desc.length > 30) desc = desc.substring(0, 27) + '...';
+    return desc + '楼';
   }
 
   // 提取帖子内容
@@ -1995,7 +2021,8 @@ tags: [${tagsStr}]
   // 保存到Obsidian
   // V3.5.3: 支持 targetPostNumber 参数
   // - 为 null 或 '1' 时：保存主帖（可选带所有评论）
-  // - 为其他值时：保存主帖 + 该楼层评论（文件名添加楼层号）
+  // - 为字符串时：保存主帖 + 该楼层评论
+  // - V5.4.2: 为数组时：保存主帖 + 多个指定楼层评论（合并为一个文件）
   async function saveToObsidian(targetPostNumber = null) {
     try {
       // 获取配置
@@ -2026,10 +2053,33 @@ tags: [${tagsStr}]
       const { title, contentHTML, url, author, topicId, category, tags } = extracted;
 
       // V3.5.3: 根据目标楼层决定评论处理方式
+      // V5.4.2: targetPostNumber 可以是数组（多楼层合并保存）
       let comments = [];
-      let isSingleCommentMode = targetPostNumber && targetPostNumber !== '1';
+      const isMultiFloor = Array.isArray(targetPostNumber);
+      const isSingleCommentMode = !isMultiFloor && targetPostNumber && targetPostNumber !== '1';
 
-      if (isSingleCommentMode) {
+      if (isMultiFloor) {
+        // 多楼层模式：提取指定的多个楼层评论，合并为一个文件
+        const floors = targetPostNumber;
+        showNotification(`正在提取 ${floors.length} 楼评论...`, 'info');
+        const notFound = [];
+        for (const floor of floors) {
+          if (String(floor) === '1') continue; // 主帖不当评论
+          const comment = extractSingleComment(String(floor));
+          if (comment) {
+            comments.push(comment);
+          } else {
+            notFound.push(floor);
+          }
+        }
+        if (comments.length === 0) {
+          showNotification('未找到任何指定楼层的评论', 'error');
+          return;
+        }
+        if (notFound.length > 0) {
+          showNotification(`${notFound.length} 楼未找到: ${notFound.slice(0, 5).join(',')}${notFound.length > 5 ? '...' : ''}`, 'warning');
+        }
+      } else if (isSingleCommentMode) {
         // 单条评论模式：提取指定楼层的评论
         showNotification(`正在提取第${targetPostNumber}楼评论...`, 'info');
         const singleComment = extractSingleComment(targetPostNumber);
@@ -2093,8 +2143,8 @@ tags: [${tagsStr}]
       }
 
       // 转换为Markdown（带评论）
-      // 对于单条评论模式，强制使用非折叠格式
-      const effectiveConfig = isSingleCommentMode
+      // 对于单条/多楼层评论模式，强制使用非折叠格式
+      const effectiveConfig = (isSingleCommentMode || isMultiFloor)
         ? { ...config, saveComments: true, foldComments: false }
         : config;
 
@@ -2132,10 +2182,18 @@ tags: [${tagsStr}]
         .replace(/^[\s-]+|[\s-]+$/g, '')
         .substring(0, 80);
 
-      // 单条评论模式：文件名加楼层号，避免覆盖主帖文件
-      const fileName = isSingleCommentMode
-        ? `${sanitizedTitle}-${targetPostNumber}楼`
-        : sanitizedTitle;
+      // 评论模式：文件名加楼层号，避免覆盖主帖文件
+      let fileName;
+      if (isMultiFloor) {
+        // 多楼层：生成简洁的楼层描述
+        const floors = targetPostNumber.filter(f => f !== 1);
+        const floorDesc = formatFloorRange(floors);
+        fileName = `${sanitizedTitle}-${floorDesc}`;
+      } else if (isSingleCommentMode) {
+        fileName = `${sanitizedTitle}-${targetPostNumber}楼`;
+      } else {
+        fileName = sanitizedTitle;
+      }
 
       // 构建Obsidian URI
       const filePath = config.folderPath ? `${config.folderPath}/${fileName}` : fileName;
@@ -2184,8 +2242,11 @@ tags: [${tagsStr}]
 
           // 显示成功提示
           let msg;
-          if (isSingleCommentMode) {
-            // 单条评论模式
+          if (isMultiFloor) {
+            msg = `已保存主帖+${comments.length}楼评论`;
+            showNotification(msg, 'success');
+            rlog('INFO', '运行成功，帖子已保存到 Obsidian: ' + filePath + ' (多楼层' + comments.length + '条)');
+          } else if (isSingleCommentMode) {
             msg = `已保存主帖+第${targetPostNumber}楼评论`;
             showNotification(msg, 'success');
             rlog('INFO', '运行成功，帖子已保存到 Obsidian: ' + filePath + ' (评论#' + targetPostNumber + ')');
@@ -2260,9 +2321,15 @@ tags: [${tagsStr}]
 
             if (htmlContent) {
               // V4.3.6: HTML文件命名与Obsidian保持一致，区分主帖和分帖
-              const safeFileName = isSingleCommentMode
-                ? `${sanitizeFileName(title)}-${targetPostNumber}楼`
-                : (sanitizeFileName(title) || 'discourse-export');
+              let safeFileName;
+              if (isMultiFloor) {
+                const floors = targetPostNumber.filter(f => f !== 1);
+                safeFileName = `${sanitizeFileName(title)}-${formatFloorRange(floors)}`;
+              } else if (isSingleCommentMode) {
+                safeFileName = `${sanitizeFileName(title)}-${targetPostNumber}楼`;
+              } else {
+                safeFileName = sanitizeFileName(title) || 'discourse-export';
+              }
 
               // V4.3.6: 使用配置的HTML导出文件夹
               const htmlFolder = config.htmlExportFolder || '';
@@ -2351,7 +2418,11 @@ tags: [${tagsStr}]
         // V3.5.4: 评论书签保存时，URL和标题加上楼层标识
         let feishuUrl = cleanUrl;
         let feishuTitle = title;
-        if (isSingleCommentMode) {
+        if (isMultiFloor) {
+          const floors = targetPostNumber.filter(f => f !== 1);
+          const floorDesc = formatFloorRange(floors);
+          feishuTitle = `${title} [${floorDesc}]`;
+        } else if (isSingleCommentMode) {
           const match = cleanUrl.match(/^(.*\/t\/[^/]+\/\d+)(\/\d+)?$/);
           if (match) {
             cleanUrl = match[1];
@@ -2415,7 +2486,10 @@ tags: [${tagsStr}]
         // 评论书签保存时，URL和标题加上楼层标识
         let notionUrl = cleanNotionUrl;
         let notionTitle = title;
-        if (isSingleCommentMode) {
+        if (isMultiFloor) {
+          const floors = targetPostNumber.filter(f => f !== 1);
+          notionTitle = `${title} [${formatFloorRange(floors)}]`;
+        } else if (isSingleCommentMode) {
           const match = cleanNotionUrl.match(/^(.*\/t\/[^/]+\/\d+)(\/\d+)?$/);
           if (match) {
             cleanNotionUrl = match[1];
@@ -2473,7 +2547,10 @@ tags: [${tagsStr}]
         let cleanYuqueUrl = url.replace(/#.*$/, '').replace(/\?.*$/, '');
         let yuqueUrl = cleanYuqueUrl;
         let yuqueTitle = title;
-        if (isSingleCommentMode) {
+        if (isMultiFloor) {
+          const floors = targetPostNumber.filter(f => f !== 1);
+          yuqueTitle = `${title} [${formatFloorRange(floors)}]`;
+        } else if (isSingleCommentMode) {
           const match = cleanYuqueUrl.match(/^(.*\/t\/[^/]+\/\d+)(\/\d+)?$/);
           if (match) {
             cleanYuqueUrl = match[1];
@@ -2517,7 +2594,10 @@ tags: [${tagsStr}]
         let siyuanUrl = cleanSiyuanUrl;
         let siyuanTitle = title;
 
-        if (isSingleCommentMode) {
+        if (isMultiFloor) {
+          const floors = targetPostNumber.filter(f => f !== 1);
+          siyuanTitle = `${title} [${formatFloorRange(floors)}]`;
+        } else if (isSingleCommentMode) {
           const match = cleanSiyuanUrl.match(/^(.*\/t\/[^/]+\/\d+)(\/\d+)?$/);
           if (match) {
             cleanSiyuanUrl = match[1];
