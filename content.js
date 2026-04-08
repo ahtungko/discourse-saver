@@ -480,11 +480,10 @@
       </div>
       <div class="ds-menu-divider"></div>
       <div class="ds-floor-input">
-        <span>保存第</span>
-        <input type="number" id="ds-floor-num" min="2" placeholder="楼层" />
-        <span>楼</span>
+        <input type="text" id="ds-floor-num" placeholder="如: 5 或 2-8 或 1,3,5-7" style="width:140px" />
         <button class="ds-floor-btn" id="ds-floor-go">保存</button>
       </div>
+      <div id="ds-floor-hint" style="font-size:11px;color:#888;padding:0 10px 6px;"></div>
     `;
 
     document.body.appendChild(menu);
@@ -517,22 +516,78 @@
     // 楼层保存
     const floorInput = menu.querySelector('#ds-floor-num');
     const floorBtn = menu.querySelector('#ds-floor-go');
+    const floorHint = menu.querySelector('#ds-floor-hint');
+
+    // 解析楼层输入：支持 "5", "2-8", "1,3,5", "1-5,8,10-12"
+    function parseFloors(str) {
+      const floors = new Set();
+      const parts = str.replace(/\s/g, '').split(',');
+      for (const part of parts) {
+        if (!part) continue;
+        const rangeMatch = part.match(/^(\d+)-(\d+)$/);
+        if (rangeMatch) {
+          const from = parseInt(rangeMatch[1]);
+          const to = parseInt(rangeMatch[2]);
+          if (from > to || to - from > 200) return null; // 防止过大范围
+          for (let i = from; i <= to; i++) floors.add(i);
+        } else if (/^\d+$/.test(part)) {
+          floors.add(parseInt(part));
+        } else {
+          return null; // 格式错误
+        }
+      }
+      return floors.size > 0 ? Array.from(floors).sort((a, b) => a - b) : null;
+    }
+
+    // 实时提示解析结果
+    floorInput.addEventListener('input', () => {
+      const raw = floorInput.value.trim();
+      if (!raw) { floorHint.textContent = ''; return; }
+      const floors = parseFloors(raw);
+      if (!floors) {
+        floorHint.textContent = '格式错误';
+        floorHint.style.color = '#d9534f';
+      } else {
+        floorHint.textContent = `共 ${floors.length} 楼: ${floors.slice(0, 8).join(', ')}${floors.length > 8 ? '...' : ''}`;
+        floorHint.style.color = '#5cb85c';
+      }
+    });
 
     function doFloorSave() {
-      const floor = parseInt(floorInput.value);
-      if (!floor || floor < 1) {
+      const raw = floorInput.value.trim();
+      if (!raw) {
         floorInput.style.borderColor = '#d9534f';
         floorInput.focus();
         return;
       }
+      const floors = parseFloors(raw);
+      if (!floors) {
+        floorInput.style.borderColor = '#d9534f';
+        floorHint.textContent = '格式错误，请输入如: 5 或 2-8 或 1,3,5-7';
+        floorHint.style.color = '#d9534f';
+        return;
+      }
       closeFabMenu();
-      console.log('[Discourse Saver] 菜单指定楼层保存:', floor);
-      rlog('INFO', '菜单指定楼层保存: ' + floor);
+      console.log('[Discourse Saver] 菜单楼层保存:', floors);
+      rlog('INFO', '菜单楼层保存: ' + floors.join(','));
       anchorBtn.classList.add('ds-fab-saving');
-      const postNum = floor === 1 ? null : String(floor);
-      saveToObsidian(postNum).finally(() => {
-        anchorBtn.classList.remove('ds-fab-saving');
-      });
+      showNotification(`开始保存 ${floors.length} 楼...`, 'info');
+
+      // 逐楼顺序保存，每楼间隔300ms避免并发过多
+      let idx = 0;
+      function saveNext() {
+        if (idx >= floors.length) {
+          anchorBtn.classList.remove('ds-fab-saving');
+          if (floors.length > 1) showNotification(`已完成 ${floors.length} 楼保存`, 'success');
+          return;
+        }
+        const floor = floors[idx++];
+        const postNum = floor === 1 ? null : String(floor);
+        saveToObsidian(postNum).finally(() => {
+          setTimeout(saveNext, 300);
+        });
+      }
+      saveNext();
     }
 
     floorBtn.addEventListener('click', doFloorSave);
