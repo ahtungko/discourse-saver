@@ -202,253 +202,164 @@
     return false;
   }
 
-  // 三级降级检测链接按钮
-  function isLinkButton(element) {
-    if (!element) return { isLink: false, postNumber: null };
+  // V5.4.0: 悬浮保存按钮（替代链接拦截）
+  let floatingBtnAdded = false;
 
-    // 必须在帖子页面上
-    if (!isTopicPage()) {
-      rlog('DEBUG', 'isLinkButton: 非帖子页面，跳过');
-      return { isLink: false, postNumber: null };
-    }
+  function createFloatingButton() {
+    if (floatingBtnAdded) return;
+    if (document.getElementById('ds-fab')) return;
+    floatingBtnAdded = true;
 
-    // 收集元素属性
-    const className = safeClassName(element);
-    const dataShareUrl = element.getAttribute('data-share-url');
-    const title = (element.title || '').toLowerCase();
-    const ariaLabel = (element.getAttribute('aria-label') || '').toLowerCase();
+    const btn = document.createElement('div');
+    btn.id = 'ds-fab';
+    btn.title = 'Discourse Saver - 点击保存帖子';
+    btn.innerHTML = `
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+        <polyline points="17 21 17 13 7 13 7 21"/>
+        <polyline points="7 3 7 8 15 8"/>
+      </svg>`;
 
-    // SVG 图标特征
-    const svg = element.querySelector('svg') || (element.tagName?.toLowerCase() === 'svg' ? element : null);
-    let svgHint = '';
-    if (svg) {
-      svgHint = safeClassName(svg) + ' ' +
-                (svg.querySelector('use')?.getAttribute('href') || '') + ' ' +
-                (svg.querySelector('use')?.getAttribute('xlink:href') || '');
-    }
-
-    // ========== 第一级：精确 class 匹配（最可靠） ==========
-    const level1 = className.includes('post-action-menu__copy-link');
-
-    // ========== 第二级：属性 + 结构匹配 ==========
-    const hasShareUrl = !!dataShareUrl;
-    const hasCopyLinkClass = className.includes('copy-link') || className.includes('share');
-    const hasLinkTitle = title.includes('链接') || title.includes('复制') ||
-                         title.includes('copy') || title.includes('share') ||
-                         title.includes('剪贴板') || title.includes('clipboard');
-    const hasLinkAria = ariaLabel.includes('链接') || ariaLabel.includes('复制') ||
-                        ariaLabel.includes('分享') || ariaLabel.includes('share') ||
-                        ariaLabel.includes('copy') || ariaLabel.includes('clipboard');
-    const level2 = hasShareUrl || hasCopyLinkClass || hasLinkTitle || hasLinkAria;
-
-    // ========== 第三级：SVG 图标特征（兜底） ==========
-    const level3 = /d-post-share|d-icon-link|share|copy-link|clipboard/.test(svgHint);
-
-    // 必须命中至少一级
-    const hitLevel = level1 ? 1 : (level2 ? 2 : (level3 ? 3 : 0));
-    if (hitLevel === 0) {
-      return { isLink: false, postNumber: null };
-    }
-
-    // 位置验证（第一级精确匹配可以放宽位置要求）
-    const postContainer = element.closest('.topic-post, article[data-post-id], .boxed, .container');
-    const controlsArea = element.closest('.post-controls, .post-menu-area, .actions, nav.post-controls, .post-actions, .discourse-reactions-actions');
-
-    if (hitLevel >= 2 && !postContainer) {
-      return { isLink: false, postNumber: null };
-    }
-    if (hitLevel === 3 && !controlsArea) {
-      return { isLink: false, postNumber: null };
-    }
-
-    // 获取楼层号
-    const topicPost = element.closest('.topic-post');
-    const postNumber = topicPost?.getAttribute('data-post-number') ||
-                       postContainer?.getAttribute('data-post-number') ||
-                       postContainer?.querySelector('[data-post-number]')?.getAttribute('data-post-number') ||
-                       '1';
-
-    console.log('[Discourse Saver] 检测到链接按钮 (L' + hitLevel + ')，楼层:', postNumber);
-    rlog('INFO', '检测到链接按钮 L' + hitLevel + ' 楼层:' + postNumber);
-    return { isLink: true, postNumber: postNumber };
-  }
-
-  // 劫持链接按钮点击事件
-  // V3.5.1: 单击保存到Obsidian，双击触发原生功能
-  // V3.5.3: 支持评论区按钮，点击评论按钮保存主帖+该评论
-  // V3.5.3.1: 修复双击检测竞态条件 - 必须是同一个按钮才算双击
-  // V3.5.7: 改为劫持链接按钮，双击触发原生复制链接
-  let linkClickCount = 0;
-  let linkClickTimer = null;
-  let lastLinkTarget = null;
-  let lastLinkPostNumber = null; // 记录点击的楼层号
-  let eventListenerAdded = false; // 防止重复添加事件监听器
-
-  function hijackLinkButton() {
-    // 防止重复添加事件监听器
-    if (eventListenerAdded) {
-      console.log('[Discourse Saver] 事件监听器已存在，跳过添加');
-      return;
-    }
-    eventListenerAdded = true;
-
-    document.addEventListener('click', (e) => {
-      try {
-        // 从点击元素向上查找 button 或 a
-        let target = e.target.closest('button');
-        if (!target) {
-          target = e.target.closest('a');
-        }
-
-        if (!target) return;
-        rlog('DEBUG', '点击捕获: ' + target.tagName + ' class=' + safeClassName(target).substring(0, 60));
-
-        // bypass 标记放行
-        if (target.hasAttribute('data-linuxdo-obsidian-bypass')) {
-          console.log('[Discourse Saver] 检测到bypass标记，放行原生点击');
-          return;
-        }
-
-        const linkResult = isLinkButton(target);
-
-        if (target && linkResult.isLink) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-
-        // V3.5.3.1: 检查是否点击的是同一个按钮（通过楼层号判断）
-        const isSameButton = lastLinkPostNumber === linkResult.postNumber;
-
-        if (isSameButton) {
-          linkClickCount++;
-        } else {
-          // 点击了不同的链接按钮，重置计数
-          if (linkClickTimer) {
-            clearTimeout(linkClickTimer);
-            linkClickTimer = null;
-          }
-          linkClickCount = 1;
-        }
-
-        lastLinkTarget = target;
-        lastLinkPostNumber = linkResult.postNumber;
-
-        // 清除之前的定时器
-        if (linkClickTimer) {
-          clearTimeout(linkClickTimer);
-        }
-
-        if (linkClickCount === 2 && isSameButton) {
-          // 双击同一个按钮：触发原生复制链接
-          console.log('[Discourse Saver] 双击检测，触发原生复制链接，楼层:', linkResult.postNumber);
-          rlog('INFO', '双击触发原生复制链接 楼层:' + linkResult.postNumber);
-          linkClickCount = 0;
-          lastLinkPostNumber = null;
-          triggerOriginalCopyLink(target);
-        } else {
-          // 等待300ms判断是否为双击
-          const postNumber = linkResult.postNumber;
-          linkClickTimer = setTimeout(() => {
-            if (linkClickCount === 1) {
-              // 单击：保存到Obsidian
-              if (postNumber === '1') {
-                console.log('[Discourse Saver] 单击主帖链接按钮，保存整个帖子');
-                rlog('INFO', '单击保存主帖');
-                saveToObsidian(null); // 主帖：按原逻辑保存
-              } else {
-                console.log('[Discourse Saver] 单击评论链接按钮，保存主帖+第' + postNumber + '楼评论');
-                rlog('INFO', '单击保存评论 楼层:' + postNumber);
-                saveToObsidian(postNumber); // 评论：保存主帖+该评论
-              }
-            }
-            linkClickCount = 0;
-            lastLinkPostNumber = null;
-          }, 300);
-        }
-
-        return false;
+    const style = document.createElement('style');
+    style.textContent = `
+      #ds-fab {
+        position: fixed;
+        top: 60px;
+        right: 20px;
+        z-index: 2147483647;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: #4a90d9;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: grab;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+        user-select: none;
+        -webkit-user-select: none;
+        opacity: 0.85;
       }
-      } catch (err) {
-        console.error('[Discourse Saver] 链接按钮处理异常:', err);
-        rlog('ERROR', '链接按钮处理异常: ' + err.message);
+      #ds-fab:hover {
+        opacity: 1;
+        transform: scale(1.1);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.4);
       }
-    }, true);
-
-    console.log('[Discourse Saver] 链接按钮劫持已激活 (V3.6.0)');
-    rlog('INFO', '链接按钮劫持已激活');
-  }
-
-  // V3.5.7: 触发原生复制链接功能
-  function triggerOriginalCopyLink(target) {
-    // 直接复制当前帖子/评论的链接到剪贴板
-    // V3.5.10: 从 .topic-post 获取楼层号
-    const topicPost = target.closest('.topic-post');
-    const postNumber = topicPost?.getAttribute('data-post-number') || '1';
-
-    // 构建链接URL
-    let linkUrl = window.location.href;
-
-    // 清理URL（移除查询参数和锚点）
-    linkUrl = linkUrl.replace(/#.*$/, '').replace(/\?.*$/, '');
-
-    // 如果是评论，添加楼层号
-    if (postNumber !== '1') {
-      // 检查URL是否已经有楼层号，如果有则替换
-      const match = linkUrl.match(/^(.*\/t\/[^/]+\/\d+)(\/\d+)?$/);
-      if (match) {
-        linkUrl = match[1] + '/' + postNumber;
-      } else {
-        linkUrl = linkUrl + '/' + postNumber;
+      #ds-fab:active { cursor: grabbing; }
+      #ds-fab.ds-fab-saving {
+        background: #f0ad4e;
+        animation: ds-fab-pulse 0.8s infinite;
       }
-    }
+      @keyframes ds-fab-pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.15); }
+      }
+    `;
+    document.head.appendChild(style);
+    document.body.appendChild(btn);
 
-    console.log('[Discourse Saver] 复制链接:', linkUrl);
+    // 拖拽逻辑
+    let isDragging = false;
+    let dragStartX, dragStartY, btnStartX, btnStartY;
+    let hasMoved = false;
 
-    // 使用 Clipboard API 复制
-    navigator.clipboard.writeText(linkUrl)
-      .then(() => {
-        if (postNumber === '1') {
-          showNotification('已复制帖子链接', 'success');
-        } else {
-          showNotification(`已复制${postNumber}楼链接`, 'success');
-        }
-      })
-      .catch(err => {
-        console.error('[Discourse Saver] 剪贴板复制失败:', err);
-        // 回退方法：触发原生点击
-        fallbackTriggerCopyLink(target);
-      });
-  }
-
-  // 回退方法：临时禁用插件拦截，触发原生点击
-  function fallbackTriggerCopyLink(target) {
-    console.log('[Discourse Saver] 使用回退方法触发原生复制链接');
-
-    // 检查目标元素是否仍在 DOM 中
-    if (!document.contains(target)) {
-      console.warn('[Discourse Saver] 回退目标已从 DOM 移除，跳过');
-      return;
-    }
-
-    // 临时标记，让下一次点击通过
-    target.setAttribute('data-linuxdo-obsidian-bypass', 'true');
-
-    // 创建并分发真实的点击事件
-    const clickEvent = new MouseEvent('click', {
-      bubbles: true,
-      cancelable: true,
-      view: window
+    btn.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      hasMoved = false;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      const rect = btn.getBoundingClientRect();
+      btnStartX = rect.left;
+      btnStartY = rect.top;
+      btn.style.cursor = 'grabbing';
+      btn.style.transition = 'none';
+      e.preventDefault();
     });
-    target.dispatchEvent(clickEvent);
 
-    // 移除标记（检查元素仍存在）
-    setTimeout(() => {
-      if (document.contains(target)) {
-        target.removeAttribute('data-linuxdo-obsidian-bypass');
-      }
-    }, 100);
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - dragStartX;
+      const dy = e.clientY - dragStartY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) hasMoved = true;
+      let newX = btnStartX + dx;
+      let newY = btnStartY + dy;
+      // 边界限制
+      const maxX = window.innerWidth - 50;
+      const maxY = window.innerHeight - 50;
+      newX = Math.max(0, Math.min(newX, maxX));
+      newY = Math.max(0, Math.min(newY, maxY));
+      btn.style.left = newX + 'px';
+      btn.style.top = newY + 'px';
+      btn.style.right = 'auto';
+    });
 
-    showNotification('已触发复制链接', 'success');
+    document.addEventListener('mouseup', () => {
+      if (!isDragging) return;
+      isDragging = false;
+      btn.style.cursor = 'grab';
+      btn.style.transition = 'background 0.2s, transform 0.15s, box-shadow 0.2s';
+    });
+
+    // 点击保存（非拖拽时）
+    btn.addEventListener('click', (e) => {
+      if (hasMoved) return; // 拖拽结束不触发
+      e.stopPropagation();
+      console.log('[Discourse Saver] 悬浮按钮点击，保存帖子');
+      rlog('INFO', '悬浮按钮触发保存');
+      btn.classList.add('ds-fab-saving');
+      saveToObsidian(null).finally(() => {
+        btn.classList.remove('ds-fab-saving');
+      });
+    });
+
+    // 触屏拖拽支持
+    btn.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      isDragging = true;
+      hasMoved = false;
+      dragStartX = t.clientX;
+      dragStartY = t.clientY;
+      const rect = btn.getBoundingClientRect();
+      btnStartX = rect.left;
+      btnStartY = rect.top;
+      btn.style.transition = 'none';
+    }, { passive: true });
+
+    document.addEventListener('touchmove', (e) => {
+      if (!isDragging) return;
+      const t = e.touches[0];
+      const dx = t.clientX - dragStartX;
+      const dy = t.clientY - dragStartY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) hasMoved = true;
+      let newX = btnStartX + dx;
+      let newY = btnStartY + dy;
+      newX = Math.max(0, Math.min(newX, window.innerWidth - 50));
+      newY = Math.max(0, Math.min(newY, window.innerHeight - 50));
+      btn.style.left = newX + 'px';
+      btn.style.top = newY + 'px';
+      btn.style.right = 'auto';
+    }, { passive: true });
+
+    document.addEventListener('touchend', () => {
+      if (!isDragging) return;
+      isDragging = false;
+      btn.style.transition = 'background 0.2s, transform 0.15s, box-shadow 0.2s';
+    });
+
+    console.log('[Discourse Saver] 悬浮保存按钮已创建');
+    rlog('INFO', '悬浮按钮已创建');
+  }
+
+  // V5.4.0: 移除悬浮按钮（离开帖子页面时）
+  function removeFloatingButton() {
+    const btn = document.getElementById('ds-fab');
+    if (btn) {
+      btn.remove();
+      floatingBtnAdded = false;
+      console.log('[Discourse Saver] 悬浮按钮已移除（非帖子页面）');
+    }
   }
 
   // 提取帖子内容
@@ -4134,6 +4045,7 @@ tags: [${tagsStr}]
 
     // 检查是否是帖子页面
     if (!isTopicPage()) {
+      removeFloatingButton(); // V5.4.0: SPA导航离开帖子页面时移除悬浮按钮
       console.log('[Discourse Saver] 非帖子页面，跳过初始化');
       rlog('DEBUG', '非帖子页面: ' + location.pathname.substring(0, 60));
       return;
@@ -4146,13 +4058,13 @@ tags: [${tagsStr}]
       return;
     }
 
-    // 初始化事件监听器（只添加一次）
-    hijackLinkButton();
+    // V5.4.0: 悬浮按钮替代链接拦截
+    createFloatingButton();
     setupKeyboardShortcut();
 
     pluginInitialized = true;
     currentTopicUrl = topicUrl;
-    console.log('[Discourse Saver] 插件已加载 (V3.6.0)');
+    console.log('[Discourse Saver] 插件已加载 (V5.4.0)');
     rlog('INFO', '初始化完成: ' + location.pathname.substring(0, 60));
   }
 
