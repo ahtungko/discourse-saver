@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Discourse Saver (油猴版)
+// @name         Discourse Saver (油猴版 · 稳定版)
 // @namespace    https://github.com/discourse-saver
 // @version      5.5.0
-// @description  通用Discourse论坛内容保存工具 - 支持Obsidian/飞书/Notion/HTML，评论、下载媒体到本地、折叠模式
+// @description  通用Discourse论坛内容保存工具 稳定版 - 支持Obsidian/飞书/Notion/HTML，主帖Turndown转换，兼容性最佳
 // @author       阿成
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=obsidian.md
 // @match        https://linux.do/*
