@@ -876,6 +876,7 @@
             username: postUsername,
             userUrl,
             contentHTML: post.cooked || '',
+            rawMarkdown: post.raw || '',   // V5.5-raw: 优先使用原始 Markdown
             position: String(post.post_number),
             time: post.created_at || '',
             likes: String(post.like_count || 0)
@@ -897,6 +898,61 @@
     } catch (error) {
       console.error('[Discourse Saver] API获取评论失败:', error);
       throw error;
+    }
+  }
+
+  // V5.5-raw: 将 cooked HTML 中的图片 URL 映射回 raw 的 upload:// token
+  function resolveUploadUrls(rawMarkdown, cookedHtml) {
+    if (!rawMarkdown || !cookedHtml) return rawMarkdown;
+    // 找出 raw 中所有 upload:// token
+    const uploadTokens = rawMarkdown.match(/upload:\/\/[^\s\)\"'\]]+/g);
+    if (!uploadTokens || uploadTokens.length === 0) return rawMarkdown;
+
+    // 从 cooked HTML 提取所有图片 src（完整 URL）
+    const imgUrls = [];
+    const imgRegex = /src="(https?:\/\/[^"]+\/uploads\/[^"]+)"/g;
+    let m;
+    while ((m = imgRegex.exec(cookedHtml)) !== null) {
+      imgUrls.push(m[1]);
+    }
+
+    let resolved = rawMarkdown;
+    uploadTokens.forEach((token, idx) => {
+      // 取 upload:// 后的 hash（去掉扩展名）
+      const tokenBody = token.replace('upload://', '');
+      const hashPart = tokenBody.split('.')[0];
+
+      // 优先：在 URL 中找到包含此 hash 的完整 URL
+      const matchedUrl = imgUrls.find(u => u.includes(hashPart));
+      const replacement = matchedUrl || (idx < imgUrls.length ? imgUrls[idx] : null);
+
+      if (replacement) {
+        resolved = resolved.split(token).join(replacement);
+      }
+    });
+
+    return resolved;
+  }
+
+  // V5.5-raw: 通过 /raw/{topicId}/1 获取主帖原始 Markdown
+  async function fetchRawMainPost(topicId) {
+    if (!topicId) return null;
+    const baseUrl = window.location.origin;
+    try {
+      const response = await fetch(`${baseUrl}/raw/${topicId}/1`, {
+        credentials: 'include',
+        cache: 'no-store'
+      });
+      if (!response.ok) {
+        console.warn(`[Discourse Saver] /raw/${topicId}/1 返回 ${response.status}，回退 Turndown`);
+        return null;
+      }
+      const text = await response.text();
+      console.log(`[Discourse Saver] 获取到原始 Markdown，长度: ${text.length}`);
+      return text;
+    } catch (e) {
+      console.warn('[Discourse Saver] fetchRawMainPost 失败，回退 Turndown:', e);
+      return null;
     }
   }
 
@@ -1871,7 +1927,8 @@
   }
 
   // V3: HTML转Markdown（带评论版本）
-  function convertToMarkdownWithComments(contentHTML, metadata, comments, config) {
+  // V5.5-raw: rawMainContent 为可选参数，传入时跳过 Turndown 转换直接使用原始 Markdown
+  function convertToMarkdownWithComments(contentHTML, metadata, comments, config, rawMainContent = null) {
     const turndownService = createTurndownService();
 
     // V3.1: 如果不保留图片，移除所有图片规则的输出
@@ -1908,11 +1965,16 @@
       });
     }
 
-    // 转换正文并清理格式
-    let mainContent = turndownService.turndown(contentHTML);
-    // V3.6.0: 传递配置给 cleanupMarkdown，以便在启用图片嵌入时保留 GIF
-    mainContent = cleanupMarkdown(mainContent, config.embedImages && config.imageSkipGif);
-    mainContent = mainContent.trim();
+    // V5.5-raw: 优先使用原始 Markdown，回退到 Turndown
+    let mainContent;
+    if (rawMainContent) {
+      mainContent = rawMainContent.trim();
+      console.log('[Discourse Saver] 使用原始 Markdown（跳过 Turndown 转换）');
+    } else {
+      mainContent = turndownService.turndown(contentHTML);
+      mainContent = cleanupMarkdown(mainContent, config.embedImages && config.imageSkipGif);
+      mainContent = mainContent.trim();
+    }
 
     // 构建完整Markdown
     let markdown = '';
@@ -1963,12 +2025,15 @@ tags: [${tagsStr}]
       markdown += `## 评论区（共${comments.length}条）\n\n`;
 
       for (const comment of comments) {
-        let commentContent = turndownService.turndown(comment.contentHTML);
-
-        // V3.1: 清理残留语法和多余空行
-        // V3.6.0: 传递 keepGif 参数
-        commentContent = cleanupMarkdown(commentContent, config.embedImages && config.imageSkipGif);
-        commentContent = commentContent.trim();
+        // V5.5-raw: 优先使用 post.raw，回退到 Turndown
+        let commentContent;
+        if (comment.rawMarkdown) {
+          commentContent = resolveUploadUrls(comment.rawMarkdown, comment.contentHTML).trim();
+        } else {
+          commentContent = turndownService.turndown(comment.contentHTML);
+          commentContent = cleanupMarkdown(commentContent, config.embedImages && config.imageSkipGif);
+          commentContent = commentContent.trim();
+        }
 
         // V4.3.8: 用户名支持超链接，点击跳转到用户主页
         // 普通模式：标题自带粗体，不额外加粗
@@ -2187,11 +2252,18 @@ tags: [${tagsStr}]
         ? { ...config, saveComments: true, foldComments: false }
         : config;
 
+      // V5.5-raw: 尝试获取主帖原始 Markdown（仅在保存主帖时使用）
+      let rawMainContent = null;
+      if (!isSingleCommentMode && !isMultiFloor && topicId) {
+        rawMainContent = await fetchRawMainPost(topicId);
+      }
+
       let markdown = convertToMarkdownWithComments(
         contentHTML,
         { title, url, author, topicId, category, tags },
         comments,
-        effectiveConfig
+        effectiveConfig,
+        rawMainContent
       );
 
       // V5.3.2: 保留原始markdown（原链接），供飞书/Notion/HTML等非OB平台使用

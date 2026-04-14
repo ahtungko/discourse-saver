@@ -1435,7 +1435,7 @@
         console.log(`[Discourse Saver] API提取评论: topicId=${topicId}, maxCount=${maxCount}, saveAll=${saveAll}`);
 
         const topicUrl = `${baseUrl}/t/${topicId}.json`;
-        const topicResponse = await fetch(topicUrl, { credentials: 'include', cache: 'no-store' });
+        const topicResponse = await fetch(topicUrl, { credentials: 'include' });
 
         if (!topicResponse.ok) {
           throw new Error(`获取帖子信息失败: ${topicResponse.status}`);
@@ -1469,7 +1469,7 @@
           }
 
           try {
-            const postsResponse = await fetch(postsUrl, { credentials: 'include', cache: 'no-store' });
+            const postsResponse = await fetch(postsUrl, { credentials: 'include' });
             if (!postsResponse.ok) {
               console.warn(`[Discourse Saver] 批次 ${Math.floor(i/batchSize)+1} 请求失败: ${postsResponse.status}`);
               fetchErrors++;
@@ -1491,7 +1491,6 @@
                   username: postUsername,
                   userUrl,
                   contentHTML: post.cooked || '',
-                  rawMarkdown: post.raw || '',   // V5.5-raw: 优先使用原始 Markdown
                   position: String(post.post_number),
                   time: post.created_at || '',
                   likes: String(post.like_count || 0)
@@ -1579,64 +1578,13 @@
       return null;
     }
 
-    // V5.5-raw: 将 cooked HTML 中的图片 URL 映射回 raw 的 upload:// token
-    function resolveUploadUrls(rawMarkdown, cookedHtml) {
-      if (!rawMarkdown || !cookedHtml) return rawMarkdown;
-      const uploadTokens = rawMarkdown.match(/upload:\/\/[^\s\)\"'\]]+/g);
-      if (!uploadTokens || uploadTokens.length === 0) return rawMarkdown;
-
-      const imgUrls = [];
-      const imgRegex = /src="(https?:\/\/[^"]+\/uploads\/[^"]+)"/g;
-      let m;
-      while ((m = imgRegex.exec(cookedHtml)) !== null) {
-        imgUrls.push(m[1]);
-      }
-
-      let resolved = rawMarkdown;
-      uploadTokens.forEach((token, idx) => {
-        const tokenBody = token.replace('upload://', '');
-        const hashPart = tokenBody.split('.')[0];
-        const matchedUrl = imgUrls.find(u => u.includes(hashPart));
-        const replacement = matchedUrl || (idx < imgUrls.length ? imgUrls[idx] : null);
-        if (replacement) {
-          resolved = resolved.split(token).join(replacement);
-        }
-      });
-
-      return resolved;
-    }
-
-    // V5.5-raw: 通过 /raw/{topicId}/1 获取主帖原始 Markdown
-    async function fetchRawMainPost(topicId) {
-      if (!topicId) return null;
-      const baseUrl = window.location.origin;
-      try {
-        const response = await fetch(`${baseUrl}/raw/${topicId}/1`, {
-          credentials: 'include',
-          cache: 'no-store'
-        });
-        if (!response.ok) {
-          console.warn(`[Discourse Saver] /raw/${topicId}/1 返回 ${response.status}，回退 Turndown`);
-          return null;
-        }
-        const text = await response.text();
-        console.log(`[Discourse Saver] 获取到原始 Markdown，长度: ${text.length}`);
-        return text;
-      } catch (e) {
-        console.warn('[Discourse Saver] fetchRawMainPost 失败，回退 Turndown:', e);
-        return null;
-      }
-    }
-
     return {
       isDiscourseForumPage,
       isTopicPage,
       extractContent,
       extractComments,
       extractCommentsViaAPI,
-      extractSingleComment,
-      resolveUploadUrls,
-      fetchRawMainPost
+      extractSingleComment
     };
   })();
 
@@ -2007,23 +1955,19 @@
     }
 
     // 转换为带评论的Markdown
-    function convertToMarkdownWithComments(contentHTML, metadata, comments, config, rawMainContent = null) {
+    function convertToMarkdownWithComments(contentHTML, metadata, comments, config) {
       const td = initTurndown();
 
-      // V5.5-raw: 优先使用原始 Markdown，回退到 Turndown
+      // 安全地转换主内容
       let mainContent = '';
-      if (rawMainContent) {
-        mainContent = rawMainContent.trim();
-        console.log('[Discourse Saver] 使用原始 Markdown（跳过 Turndown 转换）');
-      } else {
-        try {
-          const cleanedMainHtml = UtilModule.sanitizeHtml(contentHTML || '');
-          mainContent = td.turndown(cleanedMainHtml);
-          mainContent = cleanupMarkdown(mainContent);
-        } catch (mainContentError) {
-          console.error('[Discourse Saver] 主内容转换失败:', mainContentError.message);
-          mainContent = (contentHTML || '').replace(/<[^>]*>/g, '').trim() || '*[主内容转换失败]*';
-        }
+      try {
+        const cleanedMainHtml = UtilModule.sanitizeHtml(contentHTML || '');
+        mainContent = td.turndown(cleanedMainHtml);
+        mainContent = cleanupMarkdown(mainContent);
+      } catch (mainContentError) {
+        console.error('[Discourse Saver] 主内容转换失败:', mainContentError.message);
+        // 备选方案：使用纯文本
+        mainContent = (contentHTML || '').replace(/<[^>]*>/g, '').trim() || '*[主内容转换失败]*';
       }
 
       let markdown = '';
@@ -2076,20 +2020,19 @@ ${tagsYaml}
 
         for (const comment of comments) {
           try {
-            // V5.5-raw: 优先使用 post.raw，回退到 Turndown
+            // 清理 HTML 内容，防止解析崩溃
+            const cleanedHtml = UtilModule.sanitizeHtml(comment.contentHTML || '');
+
+            // 安全地转换为 Markdown
             let commentContent = '';
-            if (comment.rawMarkdown) {
-              commentContent = ExtractModule.resolveUploadUrls(comment.rawMarkdown, comment.contentHTML).trim();
-            } else {
-              try {
-                const cleanedHtml = UtilModule.sanitizeHtml(comment.contentHTML || '');
-                commentContent = td.turndown(cleanedHtml);
-                commentContent = cleanupMarkdown(commentContent);
-                commentContent = commentContent.trim();
-              } catch (turndownError) {
-                console.warn(`[Discourse Saver] Turndown 转换失败 (第${comment.position}楼):`, turndownError.message);
-                commentContent = (comment.contentHTML || '').replace(/<[^>]*>/g, '').trim() || '*[内容转换失败]*';
-              }
+            try {
+              commentContent = td.turndown(cleanedHtml);
+              commentContent = cleanupMarkdown(commentContent);
+              commentContent = commentContent.trim();
+            } catch (turndownError) {
+              console.warn(`[Discourse Saver] Turndown 转换失败 (第${comment.position}楼):`, turndownError.message);
+              // 备选方案：使用纯文本
+              commentContent = cleanedHtml.replace(/<[^>]*>/g, '').trim() || '*[内容转换失败]*';
             }
 
             // 构建安全的用户 URL
@@ -2176,48 +2119,6 @@ ${tagsYaml}
   const SaveModule = (function() {
     const NOTION_API_VERSION = '2022-06-28';
 
-    // V5.5: 解析楼层输入，支持 "5", "2-8", "1,3,5", "1-5,8,10-12"
-    function parseFloors(str) {
-      const floors = new Set();
-      const parts = String(str).replace(/\s/g, '').split(',');
-      for (const part of parts) {
-        if (!part) continue;
-        const rangeMatch = part.match(/^(\d+)-(\d+)$/);
-        if (rangeMatch) {
-          const from = parseInt(rangeMatch[1]);
-          const to = parseInt(rangeMatch[2]);
-          if (from > to || to - from > 200) return null;
-          for (let i = from; i <= to; i++) floors.add(i);
-        } else if (/^\d+$/.test(part)) {
-          floors.add(parseInt(part));
-        } else {
-          return null;
-        }
-      }
-      return floors.size > 0 ? Array.from(floors).sort((a, b) => a - b) : null;
-    }
-
-    // V5.5: 将楼层数组格式化为简洁描述（用于文件名）
-    function formatFloorRange(floors) {
-      if (!floors || floors.length === 0) return '';
-      if (floors.length === 1) return floors[0] + '楼';
-      const sorted = [...floors].sort((a, b) => a - b);
-      if (sorted[sorted.length - 1] - sorted[0] === sorted.length - 1) {
-        return `${sorted[0]}至${sorted[sorted.length - 1]}楼`;
-      }
-      const parts = [];
-      let start = sorted[0], prev = sorted[0];
-      for (let i = 1; i <= sorted.length; i++) {
-        if (i === sorted.length || sorted[i] !== prev + 1) {
-          parts.push(start === prev ? String(start) : `${start}-${prev}`);
-          if (i < sorted.length) { start = sorted[i]; prev = sorted[i]; }
-        } else {
-          prev = sorted[i];
-        }
-      }
-      return parts.join(',') + '楼';
-    }
-
     // 通用：提取内容和评论
     async function extractData(config, targetPostNumber = null) {
       const extracted = ExtractModule.extractContent();
@@ -2227,28 +2128,9 @@ ${tagsYaml}
 
       const { title, contentHTML, url, author, topicId, category, tags } = extracted;
       let comments = [];
-      const isMultiFloor = Array.isArray(targetPostNumber);
-      let isSingleCommentMode = !isMultiFloor && targetPostNumber && targetPostNumber !== '1';
+      let isSingleCommentMode = targetPostNumber && targetPostNumber !== '1';
 
-      if (isMultiFloor) {
-        // 多楼层模式：通过 API 获取指定楼层列表
-        const floors = targetPostNumber;
-        UtilModule.showNotification(`正在获取 ${floors.length} 个楼层...`, 'info');
-        if (topicId) {
-          try {
-            const allComments = await ExtractModule.extractCommentsViaAPI(
-              topicId, Math.max(...floors), false,
-              (msg) => UtilModule.showNotification(msg, 'info')
-            );
-            comments = allComments.filter(c => floors.includes(parseInt(c.position)));
-          } catch (e) {
-            console.warn('[Discourse Saver] 多楼层 API 获取失败，回退 DOM:', e);
-            comments = floors.map(f => ExtractModule.extractSingleComment(String(f))).filter(Boolean);
-          }
-        } else {
-          comments = floors.map(f => ExtractModule.extractSingleComment(String(f))).filter(Boolean);
-        }
-      } else if (isSingleCommentMode) {
+      if (isSingleCommentMode) {
         UtilModule.showNotification(`正在提取第${targetPostNumber}楼评论...`, 'info');
         const singleComment = ExtractModule.extractSingleComment(targetPostNumber);
         if (singleComment) {
@@ -2310,7 +2192,7 @@ ${tagsYaml}
 
       return {
         title, contentHTML, url, author, topicId, category, tags,
-        comments, isSingleCommentMode, isMultiFloor
+        comments, isSingleCommentMode
       };
     }
 
@@ -4041,24 +3923,17 @@ ${tagsYaml}
     async function prepareData(targetPostNumber = null) {
       const config = ConfigModule.get();
       const data = await extractData(config, targetPostNumber);
-      const { title, contentHTML, url, author, topicId, category, tags, comments, isSingleCommentMode, isMultiFloor } = data;
+      const { title, contentHTML, url, author, topicId, category, tags, comments, isSingleCommentMode } = data;
 
-      const effectiveConfig = (isSingleCommentMode || isMultiFloor)
+      const effectiveConfig = isSingleCommentMode
         ? { ...config, saveComments: true, foldComments: false }
         : config;
-
-      // V5.5-raw: 尝试获取主帖原始 Markdown（仅在保存主帖时使用）
-      let rawMainContent = null;
-      if (!isSingleCommentMode && !isMultiFloor && topicId) {
-        rawMainContent = await ExtractModule.fetchRawMainPost(topicId);
-      }
 
       let markdown = ConvertModule.convertToMarkdownWithComments(
         contentHTML,
         { title, url, author, topicId, category, tags },
         comments,
-        effectiveConfig,
-        rawMainContent
+        effectiveConfig
       );
 
       // 如果启用了图片嵌入，将图片转换为 Base64
@@ -4095,20 +3970,16 @@ ${tagsYaml}
       }
 
       let fileName = UtilModule.sanitizeFileName(title);
-      let displayTitle = title;
+      let displayTitle = title;  // Notion 等显示用的标题
 
       if (isSingleCommentMode) {
         fileName += `-${targetPostNumber}楼`;
-        displayTitle = `${title} #${targetPostNumber}楼`;
-      } else if (isMultiFloor) {
-        const floorDesc = formatFloorRange(targetPostNumber);
-        fileName += `-${floorDesc}`;
-        displayTitle = `${title} [${floorDesc}]`;
+        displayTitle = `${title} #${targetPostNumber}楼`;  // Notion 标题也加上楼层信息
       }
 
       const metadata = { title: displayTitle, url, author, category, tags, commentCount: comments.length };
 
-      return { markdown, fileName, metadata, comments, config, isSingleCommentMode, isMultiFloor, targetPostNumber };
+      return { markdown, fileName, metadata, comments, config, isSingleCommentMode, targetPostNumber };
     }
 
     // 独立导出：仅保存到 Obsidian
@@ -4314,9 +4185,7 @@ ${tagsYaml}
       exportHtmlOnly,          // 仅导出 HTML
       testNotionConnection,    // 测试 Notion 连接
       testFeishuConnection,    // 测试飞书连接
-      downloadLastLargeFile,   // 备选：下载大文件
-      parseFloors,             // V5.5: 解析楼层输入
-      formatFloorRange         // V5.5: 格式化楼层范围
+      downloadLastLargeFile    // 备选：下载大文件
     };
   })();
 
@@ -5062,18 +4931,6 @@ ${tagsYaml}
       // 注册油猴菜单
       GM_registerMenuCommand('⚙️ 设置', showSettingsPanel);
       GM_registerMenuCommand('📥 保存当前帖子（全部目标）', () => SaveModule.save(null));
-      GM_registerMenuCommand('📐 指定楼层保存', () => {
-        const raw = prompt('输入楼层（支持: 5 / 2-8 / 1,3,5 / 1-5,8,10-12）:');
-        if (!raw) return;
-        const floors = SaveModule.parseFloors(raw);
-        if (!floors) { alert('格式错误，请重新输入'); return; }
-        if (floors.length === 1) {
-          const postNum = floors[0] === 1 ? null : String(floors[0]);
-          SaveModule.save(postNum);
-        } else {
-          SaveModule.save(floors);
-        }
-      });
       GM_registerMenuCommand('📝 仅保存到 Obsidian', () => SaveModule.saveToObsidianOnly(null));
       GM_registerMenuCommand('📑 仅保存到 Notion', () => SaveModule.saveToNotionOnly(null));
       GM_registerMenuCommand('🐦 仅保存到飞书', () => SaveModule.saveToFeishuOnly(null));
