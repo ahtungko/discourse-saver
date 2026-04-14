@@ -511,7 +511,7 @@
 
     // V5.1: 通过 Obsidian Local REST API 下载媒体文件到 Vault 并替换路径
     async function downloadAndReplaceMedia(markdown, config, siteFolderPath) {
-      if (!config.downloadImages) {
+      if (!config.downloadImages && !config.downloadVideos) {
         return markdown;
       }
 
@@ -2013,7 +2013,9 @@
       // V5.5-raw: 优先使用原始 Markdown，回退到 Turndown
       let mainContent = '';
       if (rawMainContent) {
-        mainContent = rawMainContent.trim();
+        // V5.5-raw: 解析 upload:// token → 真实 URL，然后清理多余空行
+        mainContent = ExtractModule.resolveUploadUrls(rawMainContent, contentHTML || '').trim();
+        mainContent = cleanupMarkdown(mainContent);
         console.log('[Discourse Saver] 使用原始 Markdown（跳过 Turndown 转换）');
       } else {
         try {
@@ -2079,7 +2081,8 @@ ${tagsYaml}
             // V5.5-raw: 优先使用 post.raw，回退到 Turndown
             let commentContent = '';
             if (comment.rawMarkdown) {
-              commentContent = ExtractModule.resolveUploadUrls(comment.rawMarkdown, comment.contentHTML).trim();
+              commentContent = ExtractModule.resolveUploadUrls(comment.rawMarkdown, comment.contentHTML);
+              commentContent = cleanupMarkdown(commentContent).trim();
             } else {
               try {
                 const cleanedHtml = UtilModule.sanitizeHtml(comment.contentHTML || '');
@@ -2231,16 +2234,46 @@ ${tagsYaml}
       let isSingleCommentMode = !isMultiFloor && targetPostNumber && targetPostNumber !== '1';
 
       if (isMultiFloor) {
-        // 多楼层模式：通过 API 获取指定楼层列表
+        // 多楼层模式：直接按 post_number 从 API 批量获取，避免拉取多余评论
         const floors = targetPostNumber;
         UtilModule.showNotification(`正在获取 ${floors.length} 个楼层...`, 'info');
         if (topicId) {
           try {
-            const allComments = await ExtractModule.extractCommentsViaAPI(
-              topicId, Math.max(...floors), false,
-              (msg) => UtilModule.showNotification(msg, 'info')
-            );
-            comments = allComments.filter(c => floors.includes(parseInt(c.position)));
+            // 先获取帖子流，拿到 post_id 列表，再按 post_number 过滤
+            const baseUrl = window.location.origin;
+            const topicResp = await fetch(`${baseUrl}/t/${topicId}.json`, { credentials: 'include', cache: 'no-store' });
+            if (!topicResp.ok) throw new Error(`获取帖子流失败: ${topicResp.status}`);
+            const topicData = await topicResp.json();
+            const allPosts = topicData.post_stream?.posts || [];
+            // 找到已加载的帖子中属于目标楼层的 post_id
+            const stream = topicData.post_stream?.stream || [];
+            // 通过 posts.json 精确获取目标楼层（按 post_ids[] 参数）
+            const batchSize = 20;
+            for (let i = 0; i < floors.length; i += batchSize) {
+              const batch = floors.slice(i, i + batchSize);
+              // 需要将 floor number → post_id，但 stream 只是 id 列表（按顺序对应 post_number）
+              // post_number N 对应 stream[N-1]
+              const postIds = batch.map(f => stream[f - 1]).filter(Boolean);
+              if (postIds.length === 0) continue;
+              const params = postIds.map(id => `post_ids[]=${id}`).join('&');
+              const resp = await fetch(`${baseUrl}/t/${topicId}/posts.json?${params}`, { credentials: 'include', cache: 'no-store' });
+              if (!resp.ok) continue;
+              const data = await resp.json();
+              for (const post of data.post_stream?.posts || []) {
+                if (!floors.includes(post.post_number)) continue;
+                const username = post.username || '匿名用户';
+                comments.push({
+                  username,
+                  userUrl: username !== '匿名用户' ? `${baseUrl}/u/${username}` : '',
+                  contentHTML: post.cooked || '',
+                  rawMarkdown: post.raw || '',
+                  position: String(post.post_number),
+                  time: post.created_at || '',
+                  likes: String(post.like_count || 0)
+                });
+              }
+            }
+            comments.sort((a, b) => parseInt(a.position) - parseInt(b.position));
           } catch (e) {
             console.warn('[Discourse Saver] 多楼层 API 获取失败，回退 DOM:', e);
             comments = floors.map(f => ExtractModule.extractSingleComment(String(f))).filter(Boolean);
@@ -2298,8 +2331,8 @@ ${tagsYaml}
         console.log('[Discourse Saver] 评论保存未启用 (saveComments=false)');
       }
 
-      // 楼层范围过滤
-      if (config.useFloorRange && comments.length > 0) {
+      // 楼层范围过滤（多楼层/单楼层模式已精确指定，不再二次过滤）
+      if (!isMultiFloor && !isSingleCommentMode && config.useFloorRange && comments.length > 0) {
         const floorFrom = config.floorFrom || 1;
         const floorTo = config.floorTo || 100;
         comments = comments.filter(c => {
@@ -3299,6 +3332,18 @@ ${tagsYaml}
             quote: { rich_text: parseRichText(quoteContent) }
           });
         }
+        // 任务列表（必须在无序列表之前匹配，否则 "- [ ]" 会被无序列表规则先命中）
+        else if (line.match(/^[-*]\s+\[[ x]\]\s+/)) {
+          const isChecked = line.includes('[x]');
+          const content = line.replace(/^[-*]\s+\[[ x]\]\s+/, '');
+          blocks.push({
+            type: 'to_do',
+            to_do: {
+              rich_text: parseRichText(content),
+              checked: isChecked
+            }
+          });
+        }
         // 列表项（无序）
         else if (line.match(/^[-*]\s+/)) {
           const content = line.replace(/^[-*]\s+/, '');
@@ -3313,18 +3358,6 @@ ${tagsYaml}
           blocks.push({
             type: 'numbered_list_item',
             numbered_list_item: { rich_text: parseRichText(content) }
-          });
-        }
-        // 任务列表
-        else if (line.match(/^[-*]\s+\[[ x]\]\s+/)) {
-          const isChecked = line.includes('[x]');
-          const content = line.replace(/^[-*]\s+\[[ x]\]\s+/, '');
-          blocks.push({
-            type: 'to_do',
-            to_do: {
-              rich_text: parseRichText(content),
-              checked: isChecked
-            }
           });
         }
         // Markdown 表格
@@ -3725,6 +3758,8 @@ ${tagsYaml}
         databaseId = dbId;
       }
 
+      if (!token) return Promise.resolve({ success: false, error: '请填写 Notion Token' });
+      if (!databaseId) return Promise.resolve({ success: false, error: '请填写 Database ID' });
       databaseId = databaseId.replace(/-/g, '');
 
       return new Promise((resolve, reject) => {

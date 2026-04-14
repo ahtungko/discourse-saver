@@ -1968,7 +1968,8 @@
     // V5.5-raw: 优先使用原始 Markdown，回退到 Turndown
     let mainContent;
     if (rawMainContent) {
-      mainContent = rawMainContent.trim();
+      mainContent = resolveUploadUrls(rawMainContent, contentHTML || '').trim();
+      mainContent = cleanupMarkdown(mainContent, config.embedImages && config.imageSkipGif);
       console.log('[Discourse Saver] 使用原始 Markdown（跳过 Turndown 转换）');
     } else {
       mainContent = turndownService.turndown(contentHTML);
@@ -2028,7 +2029,8 @@ tags: [${tagsStr}]
         // V5.5-raw: 优先使用 post.raw，回退到 Turndown
         let commentContent;
         if (comment.rawMarkdown) {
-          commentContent = resolveUploadUrls(comment.rawMarkdown, comment.contentHTML).trim();
+          commentContent = resolveUploadUrls(comment.rawMarkdown, comment.contentHTML);
+          commentContent = cleanupMarkdown(commentContent, config.embedImages && config.imageSkipGif).trim();
         } else {
           commentContent = turndownService.turndown(comment.contentHTML);
           commentContent = cleanupMarkdown(commentContent, config.embedImages && config.imageSkipGif);

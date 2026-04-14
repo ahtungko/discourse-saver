@@ -3,8 +3,8 @@
 ## 版本信息
 
 - **原版本**: v3.6.0
-- **最新版本**: v5.3.1
-- **更新日期**: 2026-04-02
+- **最新版本**: v5.5.0
+- **更新日期**: 2026-04-14
 - **更新内容**:
   1. 油猴脚本版 - 支持 Tampermonkey/Greasemonkey，跨浏览器通用
   2. 评论用户名超链接 - 点击用户名跳转到用户主页
@@ -14,6 +14,33 @@
   6. 响应式设计 - 完美适配手机、平板、桌面
   7. 设置页面优化 - HTML 导出提示
   8. 性能优化 - 评论/Notion/飞书批处理
+
+---
+
+## V5.5.0 新功能 + Bug 修复 (2026-04-14)
+
+### 新功能
+- **油猴脚本飞书同步**：完整 Feishu Bitable API（gmFetch wrapper、token 缓存、文件上传）
+- **Raw API 支持**：`extractCommentsViaAPI` 保存 `post.raw`，评论优先使用原生 Markdown
+- **主帖 Raw API**：通过 `/raw/{topicId}/1` 获取主帖原始 Markdown，跳过 Turndown 转换
+- **`upload://` token 解析**：自动映射到 cooked HTML 中的真实 CDN URL
+- **`resolveUploadUrls` / `fetchRawMainPost`** 函数新增至 ExtractModule
+- **指定楼层保存**：支持 `5`、`2-8`、`1,3,5`、`1-5,8,10-12` 等格式
+- **多楼层精确获取**：按 `post_id` 批量请求，不再拉取多余评论
+- **Raw Edition 特别版**（`raw-edition/` 目录）：主帖 + 评论全部零 Turndown 转换，悬浮按钮支持楼层输入
+
+### 移除
+- 思源笔记（SiYuan Note）— 油猴脚本版
+- 语雀（Yuque）— 油猴脚本版
+
+### Bug 修复
+- **P0**：主帖 raw 路径未调用 `resolveUploadUrls`，`upload://` token 未转为真实 URL
+- **P0**：`testNotionConnection` 空 `databaseId` 时 `.replace` crash
+- **P1**：`markdownToNotionBlocks` 任务列表 block 被无序列表规则先命中（死代码修复，移至前）
+- **P1**：评论 raw 路径未调用 `cleanupMarkdown`，格式不整洁
+- **P2**：多楼层模式用 `Math.max(floors)` 作 `maxCount` 导致大量无效 API 请求
+- **P2**：`downloadAndReplaceMedia` 只检查 `downloadImages`，仅开视频下载时视频不被下载
+- **P2**：`isMultiFloor` / `isSingleCommentMode` 模式下 `useFloorRange` 二次过滤指定楼层
 
 ---
 

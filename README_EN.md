@@ -1,21 +1,16 @@
-# Discourse Saver V5.4.2
+# Discourse Saver V5.5.0
 
 **[中文](README.md) | English**
 
-Save **any Discourse forum** posts and comments to **Obsidian**, **Feishu Bitable**, **Notion**, **Yuque**, **SiYuan Note**, or export as **HTML files** with one click. Also available as a **Tampermonkey userscript** for cross-browser support.
+Save **any Discourse forum** posts and comments to **Obsidian**, **Feishu Bitable**, **Notion**, or export as **HTML files** with one click. Also available as a **Tampermonkey userscript** for cross-browser support. A **Raw Edition** (`raw-edition/`) is also available, using Discourse native Markdown directly for zero-loss tables and code blocks.
 
-> **V5.4.2 Updates** (2026-04-08):
-> - **Floating Action Button (FAB)** - Draggable button in the top-right corner, no longer intercepts link buttons
-> - **Click to Save** - Single click saves the entire post to all enabled platforms
-> - **Long-press Floor Menu** - Long-press (800ms) opens a menu to save specific floors/posts
-> - **Multi-floor Merged Save** - Supports ranges (`2-8`), lists (`1,3,5`), mixed (`1-5,8,10-12`), merged into one file
-> - **API-based Floor Fetching** - Uses Discourse API to fetch specific floors, solves lazy-loading issues completely
-> - **All Platforms Supported** - Multi-floor logic works for OB/Feishu/Notion/Yuque/SiYuan/HTML
->
-> **V5.3.1 Updates** (2026-04-02):
-> - **Independent Feishu Upload Controls** - Body/MD attachment/HTML attachment can be toggled independently
-> - **Comprehensive Bug Audit (14 fixes)** - Silent failures, cache-related freezing, missing warnings
-> - **Enhanced Logging** - Save path, filename, file size all recorded
+> **V5.5.0 Updates** (2026-04-14):
+> - **Feishu Sync in Userscript** - Full Feishu Bitable API implementation with gmFetch
+> - **Removed SiYuan & Yuque** - Focus on Obsidian / Feishu / Notion / HTML
+> - **Raw API Support** - Comments use `post.raw` native Markdown (zero table/code loss)
+> - **Custom Floor Selection** - Support `5`, `2-8`, `1,3,5`, `1-5,8,10-12` formats
+> - **Bug Fixes** - Notion to-do blocks, video download guard, floor filter logic, etc.
+> - **Raw Edition** (`raw-edition/`) - Both main post and comments use raw Markdown, zero Turndown conversion
 
 ## Browser Support
 
@@ -189,10 +184,9 @@ For privately deployed or undetected Discourse sites, you can manually add them 
 
 | Action | Result |
 |--------|--------|
-| **Single click** on Floating Button (FAB) | Save entire post to all enabled platforms (Obsidian/Feishu/Notion/Yuque/SiYuan/HTML) |
-| **Long-press** Floating Button (800ms) | Opens floor menu to save specific comment floors |
-| **Floor input format** | Single: `5`; Range: `2-8`; List: `1,3,5`; Mixed: `1-5,8,10-12` |
-| **Multi-floor result** | Merged into one file (`Title-Floors 2-8.md`), not multiple files |
+| **Single click** on post link button | Save post to Obsidian/Feishu/Notion/SiYuan Note |
+| **Single click** on comment link button | Save post + that comment (filename: `Title-Floor X.md`) |
+| **Double click** on link button | Copy link to clipboard |
 | **Ctrl+Shift+S** (Mac: **⌘+Shift+S**) | Keyboard shortcut to save post |
 
 ---
@@ -308,25 +302,20 @@ For privately deployed or undetected Discourse sites, you can manually add them 
 ### Save Posts
 
 1. Visit any **Discourse forum** (LinuxDo, Discourse Meta, etc.) post page
-2. Plugin will **auto-detect** and activate — a **floating button** appears in the top-right corner
-3. **Single click the floating button** → Save the entire post to all enabled platforms
-4. **Long-press the floating button (800ms)** → Opens floor selection menu
-5. Enter floor numbers (e.g. `3`, `2-8`, `1,3,5`, `1-5,8`) and click "Save"
-6. Specified floors are fetched via Discourse API and merged into one file
-
-> The floating button is draggable. It does not affect the forum's original link buttons.
+2. Plugin will **auto-detect** and activate (first visit will show prompt)
+3. Find the **link button** (chain icon) in the bottom right of post/comment
+4. **Single click** → Save to all enabled platforms (Obsidian/Feishu/Notion/Yuque/SiYuan Note)
+5. **Double click** → Copy link to clipboard
 
 ### File Naming Rules
 
 **Obsidian Filename:**
 - Main post: Title.md
-- Single floor: Title-Floor 3.md
-- Consecutive floors: Title-Floors 2-8.md
-- Non-consecutive floors: Title-Floors 1-3,5.md
+- Comment: Title-Floor X.md (X is floor number)
 
-**Feishu / Notion / Other Platforms:**
+**Feishu Title:**
 - Main post: Title
-- Floors: Title [Floors 2-8]
+- Comment: Title [Floor X]
 
 ---
 
@@ -688,13 +677,12 @@ Thanks for sharing!
 2. Check "Save All" to get complete comments
 3. Shows loading progress when >500 comments
 
-### Q2: No response after clicking the floating button?
+### Q2: No response after clicking link button?
 
 **A:** Please check:
-1. Is Obsidian running (required for saving to Obsidian)
-2. Is at least one save platform enabled in extension settings
-3. Does browser allow `obsidian://` protocol (first use will prompt)
-4. Press F12 to check if console has errors
+1. Is Obsidian running
+2. Does browser allow `obsidian://` protocol (first use will prompt)
+3. Press F12 to check if console has errors
 
 ### Q3: Content too long, save failed?
 
@@ -719,9 +707,9 @@ Thanks for sharing!
 - 评论数 (Number)
 - 正文 (Text) or 附件 (Attachment)
 
-### Q6: The floating button is blocking page content?
+### Q6: How to restore link button original function?
 
-**A:** Simply drag the floating button to a less intrusive position (e.g. a corner). To hide it completely, turn off the "Enable Plugin" switch in settings and refresh the page.
+**A:** Turn off "Enable Plugin" switch in settings, then refresh page.
 
 ### Q7: How to configure Feishu international version (Lark)?
 
@@ -776,20 +764,20 @@ See [NOTION-GUIDE.html](NOTION-GUIDE.html)
 
 ## Changelog
 
-### v5.4.2 (2026-04-08)
+### v5.5.0 (2026-04-14)
 
-- **New**: Floating Action Button (FAB) - draggable circular button in top-right corner
-  - No longer intercepts forum's original link buttons, eliminates false triggers
-  - Single click → save entire post to all enabled platforms
-  - Long-press (800ms) → opens floor selection menu
-- **New**: Multi-floor saving
-  - Floor input supports: single (`5`), range (`2-8`), list (`1,3,5`), mixed (`1-5,8,10-12`)
-  - Multiple floors merged into one file with auto-generated name (`Title-Floors 2-8`)
-  - Uses Discourse API to fetch specified floors, fully solves lazy-loading issues
-  - Works on all platforms: Obsidian / Feishu / Notion / Yuque / SiYuan Note / HTML
-- **Fix**: SiYuan Note missing category and tags fields
-- **Fix**: Feishu HTML export missing category and tags
-- **Fix**: Added 3-retry mechanism for `extractContent()` failures (500/1000/1500ms)
+- **New**: Full Feishu Bitable sync in Tampermonkey userscript (gmFetch / token cache / file upload)
+- **New**: Raw API support - comments use `post.raw` native Markdown (zero table/code conversion loss)
+- **New**: Main post fetched via `/raw/{id}/1` (Raw Edition & userscript)
+- **New**: `upload://` tokens automatically resolved to real CDN URLs
+- **New**: Custom floor selection with range/list formats (`2-8`, `1,3,5`, `1-5,8,10-12`)
+- **New**: Raw Edition (`raw-edition/`) - both main post and comments use zero Turndown conversion
+- **Removed**: SiYuan Note and Yuque (userscript)
+- **Fix**: Notion to-do blocks shadowed by unordered list rule (unreachable code fixed)
+- **Fix**: Video-only download guard (`downloadImages=false, downloadVideos=true` now works)
+- **Fix**: `useFloorRange` no longer double-filters in multi-floor / single-floor mode
+- **Fix**: Multi-floor mode fetches only requested floors (no excess API calls)
+- **Fix**: Raw path missing `cleanupMarkdown` / `resolveUploadUrls` causing formatting issues
 
 ### v5.3.1 (2026-04-02)
 
