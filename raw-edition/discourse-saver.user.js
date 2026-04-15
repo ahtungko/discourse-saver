@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Discourse Saver (油猴版 · Raw 特别版)
 // @namespace    https://github.com/discourse-saver
-// @version      5.5.3-raw
+// @version      5.5.4-raw
 // @description  通用Discourse论坛内容保存工具 Raw特别版 - 直接使用Discourse原始Markdown，表格/代码块零损耗，支持Obsidian/飞书/Notion/HTML
 // @author       阿成
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=obsidian.md
@@ -4443,7 +4443,7 @@ ${tagsYaml}
       overlay.className = 'ds-settings-overlay';
       overlay.innerHTML = `
         <div class="ds-settings-panel">
-          <h2>📝 Discourse Saver 设置 (V5.5.0)</h2>
+          <h2>📝 Discourse Saver 设置 (V5.5.4)</h2>
 
           <div class="ds-section-title">自定义站点</div>
 
@@ -4910,7 +4910,7 @@ ${tagsYaml}
               '找到帖子流: ' + info.hasPostStream);
       });
 
-      console.log('[Discourse Saver] 油猴脚本已加载 (V5.5.0)');
+      console.log('[Discourse Saver] 油猴脚本已加载 (V5.5.4)');
     }
 
     return { init, showSettingsPanel };
