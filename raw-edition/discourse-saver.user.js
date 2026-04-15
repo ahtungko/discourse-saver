@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Discourse Saver (油猴版 · Raw 特别版)
 // @namespace    https://github.com/discourse-saver
-// @version      5.5.7-raw
+// @version      5.5.8-raw
 // @description  通用Discourse论坛内容保存工具 Raw特别版 - 直接使用Discourse原始Markdown，表格/代码块零损耗，支持Obsidian/飞书/Notion/HTML
 // @author       阿成
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=obsidian.md
@@ -102,6 +102,7 @@
       feishuTableId: '',
       feishuUploadContent: true,
       feishuUploadAttachment: false,
+      feishuUploadHtml: false,
 
       // HTML 导出设置
       htmlExportFolder: 'Discourse导出',
@@ -3786,7 +3787,28 @@ ${tagsYaml}
       return data.data.file_token;
     }
 
-    async function feishuBuildAndSaveRecord(token, appToken, tableId, domain, postData, uploadContent, uploadAttachment, isUpdate = false, recordId = null) {
+    async function feishuUploadHtmlFile(token, appToken, title, htmlContent, domain) {
+      const safeTitle = title.replace(/[《》<>:"/\\|?*]/g, '').replace(/\s+/g, '-').substring(0, 50);
+      const fileName = `${safeTitle}.html`;
+      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+      const formData = new FormData();
+      formData.append('file', blob, fileName);
+      formData.append('file_name', fileName);
+      formData.append('parent_type', 'bitable_file');
+      formData.append('parent_node', appToken);
+      formData.append('size', blob.size.toString());
+      const baseUrl = FEISHU_API_DOMAINS[domain] || FEISHU_API_DOMAINS.feishu;
+      const response = await gmFetch(`${baseUrl}/open-apis/drive/v1/medias/upload_all`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+      const data = await feishuSafeJson(response, '上传HTML文件');
+      if (data.code !== 0) throw new Error(`上传HTML文件失败: ${data.msg}`);
+      return data.data.file_token;
+    }
+
+    async function feishuBuildAndSaveRecord(token, appToken, tableId, domain, postData, uploadContent, uploadAttachment, uploadHtml = false, isUpdate = false, recordId = null) {
       const baseUrl = FEISHU_API_DOMAINS[domain] || FEISHU_API_DOMAINS.feishu;
       const fields = {
         '标题': postData.title,
@@ -3807,6 +3829,16 @@ ${tagsYaml}
           attachments.push({ file_token: fileToken });
         } catch(e) {
           uploadErrors.push('MD附件: ' + e.message);
+        }
+      }
+
+      if (uploadHtml && postData.content && postData.metadata) {
+        try {
+          const htmlContent = generateHtmlContent(postData.content, postData.metadata);
+          const fileToken = await feishuUploadHtmlFile(token, appToken, postData.title, htmlContent, domain);
+          attachments.push({ file_token: fileToken });
+        } catch(e) {
+          uploadErrors.push('HTML附件: ' + e.message);
         }
       }
 
@@ -3877,8 +3909,11 @@ ${tagsYaml}
         category: metadata.category || '',
         tags: metadata.tags || [],
         commentCount: metadata.commentCount || 0,
-        content: markdown
+        content: markdown,
+        metadata: metadata  // 用于生成 HTML 附件
       };
+
+      const uploadHtml = !!config.feishuUploadHtml;
 
       // 搜索是否已存在，决定新建还是更新
       let existingRecord = null;
@@ -3891,11 +3926,11 @@ ${tagsYaml}
       if (existingRecord) {
         console.log('[Discourse Saver→飞书] 更新已有记录:', existingRecord.record_id);
         return await feishuBuildAndSaveRecord(token, config.feishuAppToken, config.feishuTableId, domain, postData,
-          config.feishuUploadContent !== false, config.feishuUploadAttachment, true, existingRecord.record_id);
+          config.feishuUploadContent !== false, config.feishuUploadAttachment, uploadHtml, true, existingRecord.record_id);
       } else {
         console.log('[Discourse Saver→飞书] 新建记录');
         return await feishuBuildAndSaveRecord(token, config.feishuAppToken, config.feishuTableId, domain, postData,
-          config.feishuUploadContent !== false, config.feishuUploadAttachment, false);
+          config.feishuUploadContent !== false, config.feishuUploadAttachment, uploadHtml, false);
       }
     }
 
@@ -3946,58 +3981,41 @@ ${tagsYaml}
         effectiveConfig
       );
 
-      // 如果启用了图片嵌入，将图片转换为 Base64
-      if (config.embedImages) {
-        try {
-          UtilModule.showNotification('正在嵌入图片（可能需要一些时间）...', 'info');
-          const originalMarkdown = markdown;  // 保存原始内容以防出错
-          markdown = await UtilModule.embedImagesInMarkdown(markdown, (completed, total) => {
-            UtilModule.showNotification(`正在嵌入图片 ${completed}/${total}...`, 'info');
-          });
-          // 检查结果是否有效
-          if (!markdown || markdown.length === 0) {
-            console.warn('[Discourse Saver] 图片嵌入返回空结果，使用原始内容');
-            markdown = originalMarkdown;
-          }
-        } catch (embedError) {
-          console.error('[Discourse Saver] 图片嵌入失败，使用原始内容:', embedError);
-          UtilModule.showNotification('图片嵌入失败，将使用原始图片链接', 'warning');
-          // markdown 保持原值，不影响后续保存
-        }
-      }
-
-      // V5.1: 如果启用了下载图片到本地 Vault（通过 Obsidian Local REST API）
-      if (config.downloadImages && config.restApiKey) {
-        try {
-          // 构建站点文件夹路径：folderPath/站点名
-          const siteName = window.location.hostname.replace(/\./g, '_');
-          const siteFolderPath = config.folderPath ? `${config.folderPath}/${siteName}` : siteName;
-          markdown = await UtilModule.downloadAndReplaceMedia(markdown, config, siteFolderPath);
-        } catch (downloadError) {
-          console.error('[Discourse Saver] 下载媒体文件失败:', downloadError);
-          UtilModule.showNotification('媒体下载失败，将使用原始链接', 'warning');
-        }
-      }
+      // rawMarkdown：外链版本，用于飞书/Notion/HTML
+      const rawMarkdown = markdown;
 
       let fileName = UtilModule.sanitizeFileName(title);
-      let displayTitle = title;  // Notion 等显示用的标题
+      let displayTitle = title;
 
       if (isSingleCommentMode) {
         fileName += `-${targetPostNumber}楼`;
-        displayTitle = `${title} #${targetPostNumber}楼`;  // Notion 标题也加上楼层信息
+        displayTitle = `${title} #${targetPostNumber}楼`;
       }
 
       const metadata = { title: displayTitle, url, author, category, tags, commentCount: comments.length };
 
-      return { markdown, fileName, metadata, comments, config, isSingleCommentMode, targetPostNumber };
+      return { markdown: rawMarkdown, rawMarkdown, fileName, metadata, comments, config, isSingleCommentMode, targetPostNumber };
     }
 
     // 独立导出：仅保存到 Obsidian
     async function saveToObsidianOnly(targetPostNumber = null) {
       try {
         UtilModule.showNotification('正在准备保存到 Obsidian...', 'info');
-        const { markdown, fileName, comments, config } = await prepareData(targetPostNumber);
-        await sendToObsidian(markdown, fileName, config);
+        const { rawMarkdown, fileName, comments, config } = await prepareData(targetPostNumber);
+        let obsidianMarkdown = rawMarkdown;
+        if (config.embedImages) {
+          try {
+            const result = await UtilModule.embedImagesInMarkdown(rawMarkdown);
+            if (result && result.length > 0) obsidianMarkdown = result;
+          } catch (e) { console.error('[Discourse Saver] 图片嵌入失败，使用外链:', e); }
+        } else if (config.downloadImages && config.restApiKey) {
+          try {
+            const siteName = window.location.hostname.replace(/\./g, '_');
+            const siteFolderPath = config.folderPath ? `${config.folderPath}/${siteName}` : siteName;
+            obsidianMarkdown = await UtilModule.downloadAndReplaceMedia(rawMarkdown, config, siteFolderPath);
+          } catch (e) { console.error('[Discourse Saver] 媒体下载失败，使用外链:', e); }
+        }
+        await sendToObsidian(obsidianMarkdown, fileName, config);
         const commentInfo = comments.length > 0 ? `（含${comments.length}条评论）` : '';
         UtilModule.showNotification(`已保存到 Obsidian${commentInfo}`, 'success');
         return { success: true, target: 'Obsidian' };
@@ -4059,17 +4077,17 @@ ${tagsYaml}
 
         // 提取数据（只提取一次）
         UtilModule.showNotification('正在提取内容...', 'info');
-        const { markdown, fileName, metadata, comments } = await prepareData(targetPostNumber);
+        const { rawMarkdown, fileName, metadata, comments } = await prepareData(targetPostNumber);
 
         // 构建任务列表（Obsidian 单独处理，因为会跳转页面）
         const tasks = [];
         const taskNames = [];
         let shouldSaveToObsidian = false;
 
-        // Notion 和 HTML 先执行（不会跳转页面）
+        // Notion 和 HTML 先执行（不会跳转页面），始终使用外链版 rawMarkdown
         if (config.saveToNotion && config.notionToken && config.notionDatabaseId) {
           tasks.push(
-            saveToNotion(markdown, metadata, config)
+            saveToNotion(rawMarkdown, metadata, config)
               .then(() => ({ success: true, target: 'Notion' }))
               .catch(e => ({ success: false, target: 'Notion', error: e.message }))
           );
@@ -4080,7 +4098,7 @@ ${tagsYaml}
           tasks.push(
             Promise.resolve()
               .then(() => {
-                downloadAsHtml(markdown, metadata, fileName, config);
+                downloadAsHtml(rawMarkdown, metadata, fileName, config);
                 return { success: true, target: 'HTML' };
               })
               .catch(e => ({ success: false, target: 'HTML', error: e.message }))
@@ -4090,7 +4108,7 @@ ${tagsYaml}
 
         if (config.saveToFeishu && config.feishuAppId && config.feishuAppSecret && config.feishuAppToken && config.feishuTableId) {
           tasks.push(
-            saveToFeishu(markdown, metadata, config)
+            saveToFeishu(rawMarkdown, metadata, config)
               .then(() => ({ success: true, target: '飞书' }))
               .catch(e => ({ success: false, target: '飞书', error: e.message }))
           );
@@ -4164,11 +4182,35 @@ ${tagsYaml}
             UtilModule.showNotification('正在打开 Obsidian...', 'info');
           }
 
+          // OB 专属图片处理（embedImages / downloadImages），失败则 fallback 外链
+          let obsidianMarkdown = rawMarkdown;
+          if (config.embedImages) {
+            try {
+              UtilModule.showNotification('正在嵌入图片...', 'info');
+              const result = await UtilModule.embedImagesInMarkdown(rawMarkdown, (c, t) => {
+                UtilModule.showNotification(`正在嵌入图片 ${c}/${t}...`, 'info');
+              });
+              if (result && result.length > 0) obsidianMarkdown = result;
+            } catch (e) {
+              console.error('[Discourse Saver] 图片嵌入失败，使用外链:', e);
+              UtilModule.showNotification('图片嵌入失败，使用外链', 'warning');
+            }
+          } else if (config.downloadImages && config.restApiKey) {
+            try {
+              const siteName = window.location.hostname.replace(/\./g, '_');
+              const siteFolderPath = config.folderPath ? `${config.folderPath}/${siteName}` : siteName;
+              obsidianMarkdown = await UtilModule.downloadAndReplaceMedia(rawMarkdown, config, siteFolderPath);
+            } catch (e) {
+              console.error('[Discourse Saver] 媒体下载失败，使用外链:', e);
+              UtilModule.showNotification('媒体下载失败，使用外链', 'warning');
+            }
+          }
+
           // 等待一段时间让用户看到通知
           await new Promise(resolve => setTimeout(resolve, 1500));
 
           try {
-            await sendToObsidian(markdown, fileName, config);
+            await sendToObsidian(obsidianMarkdown, fileName, config);
             succeeded.push('Obsidian');
           } catch (e) {
             failed.push({ target: 'Obsidian', error: e.message });
@@ -4499,7 +4541,7 @@ ${tagsYaml}
       overlay.className = 'ds-settings-overlay';
       overlay.innerHTML = `
         <div class="ds-settings-panel">
-          <h2>📝 Discourse Saver 设置 (V5.5.7)</h2>
+          <h2>📝 Discourse Saver 设置 (V5.5.8)</h2>
 
           <div class="ds-section-title">自定义站点</div>
 
@@ -4649,6 +4691,11 @@ ${tagsYaml}
           <div class="ds-form-group ds-checkbox-group">
             <input type="checkbox" id="ds-feishu-upload-attachment" ${config.feishuUploadAttachment ? 'checked' : ''}>
             <label for="ds-feishu-upload-attachment">上传 MD 文件作为附件</label>
+          </div>
+
+          <div class="ds-form-group ds-checkbox-group">
+            <input type="checkbox" id="ds-feishu-upload-html" ${config.feishuUploadHtml ? 'checked' : ''}>
+            <label for="ds-feishu-upload-html">上传 HTML 文件作为附件</label>
           </div>
 
           <div class="ds-form-group" style="display: flex; gap: 8px;">
@@ -4933,6 +4980,7 @@ ${tagsYaml}
           feishuTableId: overlay.querySelector('#ds-feishu-table-id').value.trim(),
           feishuUploadContent: overlay.querySelector('#ds-feishu-upload-content').checked,
           feishuUploadAttachment: overlay.querySelector('#ds-feishu-upload-attachment').checked,
+          feishuUploadHtml: overlay.querySelector('#ds-feishu-upload-html').checked,
           // HTML设置
           htmlExportFolder: overlay.querySelector('#ds-html-folder').value.trim() || 'Discourse导出',
           // 评论设置
@@ -5000,7 +5048,7 @@ ${tagsYaml}
               '找到帖子流: ' + info.hasPostStream);
       });
 
-      console.log('[Discourse Saver] 油猴脚本已加载 (V5.5.7)');
+      console.log('[Discourse Saver] 油猴脚本已加载 (V5.5.8)');
     }
 
     return { init, showSettingsPanel };
