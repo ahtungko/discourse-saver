@@ -908,12 +908,12 @@
     const uploadTokens = rawMarkdown.match(/upload:\/\/[^\s\)\"'\]]+/g);
     if (!uploadTokens || uploadTokens.length === 0) return rawMarkdown;
 
-    // 从 cooked HTML 提取所有图片 src（完整 URL）
+    // 从 cooked HTML 提取所有 CDN URL（img src、a href、audio/source/video src）
     const imgUrls = [];
-    const imgRegex = /src="(https?:\/\/[^"]+\/uploads\/[^"]+)"/g;
+    const allUrlRegex = /(?:src|href)="(https?:\/\/[^"]+\/uploads\/[^"]+)"/g;
     let m;
-    while ((m = imgRegex.exec(cookedHtml)) !== null) {
-      imgUrls.push(m[1]);
+    while ((m = allUrlRegex.exec(cookedHtml)) !== null) {
+      if (!imgUrls.includes(m[1])) imgUrls.push(m[1]);
     }
 
     let resolved = rawMarkdown;
@@ -935,25 +935,32 @@
   }
 
   // V5.5-raw: 通过 /raw/{topicId}/1 获取主帖原始 Markdown
+  // V5.5-raw: 同时获取 raw Markdown 和 API cooked HTML（含折叠 details 内的图片）
   async function fetchRawMainPost(topicId) {
-    if (!topicId) return null;
+    if (!topicId) return { rawText: null, cookedHtml: null };
     const baseUrl = window.location.origin;
+    let rawText = null;
+    let cookedHtml = null;
     try {
-      const response = await fetch(`${baseUrl}/raw/${topicId}/1`, {
-        credentials: 'include',
-        cache: 'no-store'
-      });
-      if (!response.ok) {
-        console.warn(`[Discourse Saver] /raw/${topicId}/1 返回 ${response.status}，回退 Turndown`);
-        return null;
+      const [rawRes, jsonRes] = await Promise.all([
+        fetch(`${baseUrl}/raw/${topicId}/1`, { credentials: 'include', cache: 'no-store' }),
+        fetch(`${baseUrl}/t/${topicId}.json`, { credentials: 'include', cache: 'no-store' })
+      ]);
+      if (rawRes.ok) {
+        rawText = await rawRes.text();
+        console.log(`[Discourse Saver] 获取到原始 Markdown，长度: ${rawText.length}`);
+      } else {
+        console.warn(`[Discourse Saver] /raw/${topicId}/1 返回 ${rawRes.status}`);
       }
-      const text = await response.text();
-      console.log(`[Discourse Saver] 获取到原始 Markdown，长度: ${text.length}`);
-      return text;
+      if (jsonRes.ok) {
+        const json = await jsonRes.json();
+        cookedHtml = json.post_stream?.posts?.[0]?.cooked || null;
+        console.log(`[Discourse Saver] 获取到 API cooked HTML，长度: ${cookedHtml ? cookedHtml.length : 0}`);
+      }
     } catch (e) {
       console.warn('[Discourse Saver] fetchRawMainPost 失败，回退 Turndown:', e);
-      return null;
     }
+    return { rawText, cookedHtml };
   }
 
   // V3.5.3: 提取指定楼层的单条评论
@@ -1582,6 +1589,13 @@
   // V3.2: 清理Markdown中的残留语法（保守版，不破坏正常链接和图片）
   // V3.6.0: 添加 keepGif 参数，在启用图片嵌入时保留 GIF 链接
   function cleanupMarkdown(markdown, keepGif = false) {
+    // 0. 移除 Discourse 专有折叠语法 [details] / [/details]，保留内容
+    markdown = markdown.replace(/\[details=[^\]]*\]/g, '');
+    markdown = markdown.replace(/\[\/details\]/g, '');
+
+    // 0.1 清理图片 alt 中的 Discourse 尺寸语法 ![text|WxH](url) → ![text](url)
+    markdown = markdown.replace(/!\[([^\]]*)\|\d+x\d+\]/g, '![$1]');
+
     // 1. 移除空锚点链接 [](#anchor-id)
     markdown = markdown.replace(/\[\s*\]\(#[^)]*\)/g, '');
 
@@ -1775,8 +1789,8 @@
 
         console.log(`[Discourse Saver] 媒体下载完成: ${successCount}/${mediaUrls.length} 成功`);
         if (successCount > 0) {
-          showNotification(`已下载 ${successCount}/${mediaUrls.length} 个媒体文件到 Vault`, 'success');
-          rlog('INFO', '媒体文件已下载: ' + successCount + '/' + mediaUrls.length + ' 到 Vault');
+          showNotification(`已下载 ${successCount}/${mediaUrls.length} 个媒体文件 → ${vaultMediaPath}`, 'success');
+          rlog('INFO', '媒体文件已下载: ' + successCount + '/' + mediaUrls.length + ' 到 ' + vaultMediaPath);
         }
         return processedMarkdown;
       }
@@ -1928,7 +1942,7 @@
 
   // V3: HTML转Markdown（带评论版本）
   // V5.5-raw: rawMainContent 为可选参数，传入时跳过 Turndown 转换直接使用原始 Markdown
-  function convertToMarkdownWithComments(contentHTML, metadata, comments, config, rawMainContent = null) {
+  function convertToMarkdownWithComments(contentHTML, metadata, comments, config, rawMainContent = null, apiCookedHtml = null) {
     const turndownService = createTurndownService();
 
     // V3.1: 如果不保留图片，移除所有图片规则的输出
@@ -1966,9 +1980,10 @@
     }
 
     // V5.5-raw: 优先使用原始 Markdown，回退到 Turndown
+    // apiCookedHtml（来自 /t/{id}.json）包含折叠 details 内的图片，优先使用
     let mainContent;
     if (rawMainContent) {
-      mainContent = resolveUploadUrls(rawMainContent, contentHTML || '').trim();
+      mainContent = resolveUploadUrls(rawMainContent, apiCookedHtml || contentHTML || '').trim();
       mainContent = cleanupMarkdown(mainContent, config.embedImages && config.imageSkipGif);
       console.log('[Discourse Saver] 使用原始 Markdown（跳过 Turndown 转换）');
     } else {
@@ -2256,8 +2271,11 @@ tags: [${tagsStr}]
 
       // V5.5-raw: 尝试获取主帖原始 Markdown（仅在保存主帖时使用）
       let rawMainContent = null;
+      let apiCookedHtml = null;
       if (!isSingleCommentMode && !isMultiFloor && topicId) {
-        rawMainContent = await fetchRawMainPost(topicId);
+        const fetched = await fetchRawMainPost(topicId);
+        rawMainContent = fetched.rawText;
+        apiCookedHtml = fetched.cookedHtml; // 含折叠 details 内图片的完整 cooked HTML
       }
 
       let markdown = convertToMarkdownWithComments(
@@ -2265,7 +2283,8 @@ tags: [${tagsStr}]
         { title, url, author, topicId, category, tags },
         comments,
         effectiveConfig,
-        rawMainContent
+        rawMainContent,
+        apiCookedHtml
       );
 
       // V5.3.2: 保留原始markdown（原链接），供飞书/Notion/HTML等非OB平台使用
@@ -2275,7 +2294,8 @@ tags: [${tagsStr}]
       console.log('[Discourse Saver] 媒体下载检查: downloadImages=' + config.downloadImages + ', restApiKey=' + (config.restApiKey ? '已设置(' + config.restApiKey.length + '字符)' : '未设置'));
       if (config.downloadImages && config.restApiKey) {
         rlog('INFO', '下载媒体到Vault, port=' + (config.restApiPort || 27123));
-        showNotification('正在下载媒体文件到Vault...', 'info');
+        const _mediaPreviewPath = (config.folderPath ? config.folderPath + '/' : '') + (config.mediaFolderName || 'media');
+        showNotification(`正在下载媒体文件到 ${_mediaPreviewPath}...`, 'info');
         markdown = await downloadAndReplaceMedia(markdown, config);
       } else if (config.downloadImages && !config.restApiKey) {
         console.warn('[Discourse Saver] 已勾选下载媒体但未填写 REST API Key');
@@ -4485,6 +4505,231 @@ tags: [${tagsStr}]
     }, duration);
   }
 
+  // ===== Raw Viewer: 每贴头像下方的「查看原始 Markdown」按钮 =====
+
+  function addRawViewerStyles() {
+    if (document.querySelector('#ds-raw-viewer-style')) return;
+    const style = document.createElement('style');
+    style.id = 'ds-raw-viewer-style';
+    style.textContent = `
+      .ds-raw-btn {
+        margin-top: 6px;
+        width: 32px; height: 32px;
+        border-radius: 50%;
+        background: transparent;
+        border: 1px solid transparent;
+        color: var(--primary-medium, #919191);
+        cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        transition: all 0.15s ease;
+        flex-shrink: 0;
+      }
+      .ds-raw-btn:hover {
+        background: var(--d-button-hover-background, rgba(0,0,0,0.08));
+        color: var(--primary, #222);
+      }
+      .ds-raw-btn.ds-active {
+        color: var(--tertiary, #0088cc);
+        background: var(--tertiary-low, #e6f5ff);
+      }
+      .ds-raw-btn.ds-loading { cursor: wait; opacity: 0.6; }
+      .ds-raw-btn svg { width: 17px; height: 17px; fill: currentColor; pointer-events: none; }
+      .ds-raw-wrapper {
+        margin: 12px 0 16px 0;
+        border-radius: 8px;
+        border: 1px solid var(--primary-low, #e1e4e8);
+        background: var(--secondary, #fff);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        overflow: hidden;
+      }
+      .ds-raw-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 8px 14px;
+        background: var(--primary-very-low, #f6f8fa);
+        border-bottom: 1px solid var(--primary-low, #e1e4e8);
+        font-size: 13px;
+        color: var(--primary-medium, #666);
+      }
+      .ds-raw-label { font-weight: 500; }
+      .ds-raw-copy-btn {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 4px 10px;
+        font-size: 12px; font-weight: 600;
+        border-radius: 6px;
+        cursor: pointer;
+        border: 1px solid var(--primary-low, #d0d7de);
+        background: var(--secondary, #fff);
+        color: var(--primary-medium, #57606a);
+        transition: all 0.15s;
+      }
+      .ds-raw-copy-btn:hover { color: #2da44e; border-color: #2da44e; }
+      .ds-raw-copy-btn.ds-copied { background: #2da44e; color: #fff; border-color: #2da44e; }
+      .ds-raw-copy-btn svg { width: 13px; height: 13px; fill: currentColor; }
+      .ds-raw-textarea {
+        display: block; width: 100%;
+        min-height: 100px; max-height: 400px;
+        padding: 14px 16px;
+        font-family: "JetBrains Mono","Fira Code","SF Mono",Consolas,monospace;
+        font-size: 13px; line-height: 1.6;
+        border: none; outline: none; resize: vertical;
+        background: var(--secondary, #fff);
+        color: var(--primary, #222);
+        box-sizing: border-box;
+        overflow: auto;
+      }
+      .ds-raw-textarea:focus { outline: none; box-shadow: none; border: none; }
+      @keyframes ds-spin { 100% { transform: rotate(360deg); } }
+    `;
+    document.head.appendChild(style);
+  }
+
+  const _DS_RAW_ICON = `<svg viewBox="0 0 24 24"><path d="M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0 4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"/></svg>`;
+  const _DS_COPY_ICON = `<svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>`;
+  const _DS_CHECK_ICON = `<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+  const _DS_SPIN_ICON = `<svg viewBox="0 0 24 24" style="animation:ds-spin 1s linear infinite"><path d="M12 4V2A10 10 0 0 0 2 12h2a8 8 0 0 1 8-8z"/></svg>`;
+
+  function _dsToggleRawView(btn, postEl, postNumber) {
+    const topicId = window.location.pathname.match(/\/t\/[^/]+\/(\d+)/)?.[1] || null;
+    if (!topicId) return;
+    const cookedEl = postEl.querySelector('.cooked') || postEl.querySelector('.topic-body .regular');
+    let wrapper = postEl.querySelector('.ds-raw-wrapper');
+
+    // Toggle off
+    if (btn.classList.contains('ds-active')) {
+      btn.classList.remove('ds-active');
+      btn.title = '查看原始 Markdown';
+      if (wrapper) wrapper.style.display = 'none';
+      if (cookedEl) cookedEl.style.display = '';
+      return;
+    }
+    // Toggle on (already loaded)
+    if (wrapper) {
+      btn.classList.add('ds-active');
+      btn.title = '关闭源码视图';
+      wrapper.style.display = '';
+      if (cookedEl) cookedEl.style.display = 'none';
+      return;
+    }
+
+    // First load
+    btn.innerHTML = _DS_SPIN_ICON;
+    btn.classList.add('ds-loading');
+
+    fetch(`${window.location.origin}/raw/${topicId}/${postNumber}`, { credentials: 'include' })
+      .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+      .then(rawText => {
+        // Resolve upload:// tokens using cooked HTML already in DOM
+        const cookedHtml = cookedEl ? cookedEl.innerHTML : '';
+        const resolved = resolveUploadUrls(rawText, cookedHtml);
+
+        wrapper = document.createElement('div');
+        wrapper.className = 'ds-raw-wrapper';
+
+        // Header
+        const header = document.createElement('div');
+        header.className = 'ds-raw-header';
+        const label = document.createElement('span');
+        label.className = 'ds-raw-label';
+        label.textContent = `原始 Markdown · #${postNumber}`;
+
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'ds-raw-copy-btn';
+        copyBtn.innerHTML = `${_DS_COPY_ICON} 复制`;
+        copyBtn.title = '复制到剪贴板';
+        copyBtn.addEventListener('click', () => {
+          const text = textarea.value;
+          const finish = () => {
+            copyBtn.innerHTML = `${_DS_CHECK_ICON} 已复制`;
+            copyBtn.classList.add('ds-copied');
+            setTimeout(() => { copyBtn.innerHTML = `${_DS_COPY_ICON} 复制`; copyBtn.classList.remove('ds-copied'); }, 2000);
+          };
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(text).then(finish).catch(() => _dsFallbackCopy(text, finish));
+          } else {
+            _dsFallbackCopy(text, finish);
+          }
+        });
+
+        header.appendChild(label);
+        header.appendChild(copyBtn);
+
+        // Textarea
+        const textarea = document.createElement('textarea');
+        textarea.className = 'ds-raw-textarea';
+        textarea.value = resolved;
+        textarea.readOnly = true;
+        textarea.spellcheck = false;
+
+        wrapper.appendChild(header);
+        wrapper.appendChild(textarea);
+
+        if (cookedEl) {
+          cookedEl.parentNode.insertBefore(wrapper, cookedEl.nextSibling);
+          cookedEl.style.display = 'none';
+        } else {
+          postEl.appendChild(wrapper);
+        }
+
+        // Auto-resize
+        setTimeout(() => {
+          textarea.style.height = 'auto';
+          textarea.style.height = Math.min(textarea.scrollHeight + 4, 400) + 'px';
+        }, 0);
+
+        btn.innerHTML = _DS_RAW_ICON;
+        btn.classList.remove('ds-loading');
+        btn.classList.add('ds-active');
+        btn.title = '关闭源码视图';
+      })
+      .catch(err => {
+        console.warn('[Discourse Saver] 获取原始 Markdown 失败:', err);
+        btn.innerHTML = _DS_RAW_ICON;
+        btn.classList.remove('ds-loading');
+      });
+  }
+
+  function _dsFallbackCopy(text, cb) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); cb(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+
+  function _dsAddRawBtn(postEl) {
+    if (postEl.dataset.dsRawBtnAdded) return;
+    const id = postEl.id || '';
+    if (!id.startsWith('post_')) return;
+    const postNumber = id.split('_')[1];
+    if (!postNumber) return;
+    const avatarContainer = postEl.querySelector('.topic-avatar');
+    if (!avatarContainer) return;
+
+    addRawViewerStyles();
+
+    const btn = document.createElement('button');
+    btn.className = 'ds-raw-btn';
+    btn.innerHTML = _DS_RAW_ICON;
+    btn.title = '查看原始 Markdown';
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (btn.classList.contains('ds-loading')) return;
+      _dsToggleRawView(btn, postEl, postNumber);
+    });
+
+    avatarContainer.appendChild(btn);
+    postEl.dataset.dsRawBtnAdded = 'true';
+  }
+
+  function scanAndAddRawButtons() {
+    document.querySelectorAll('[id^="post_"]').forEach(_dsAddRawBtn);
+  }
+
+  // ===== End Raw Viewer =====
+
   // 添加快捷键支持
   let keyboardListenerAdded = false;
   function setupKeyboardShortcut() {
@@ -4544,6 +4789,9 @@ tags: [${tagsStr}]
     // V5.4.0: 悬浮按钮替代链接拦截
     createFloatingButton();
     setupKeyboardShortcut();
+    // Raw Viewer: 为已加载的帖子添加查看原始 Markdown 按钮
+    scanAndAddRawButtons();
+    setTimeout(scanAndAddRawButtons, 1500);
 
     pluginInitialized = true;
     currentTopicUrl = topicUrl;
@@ -4581,7 +4829,8 @@ tags: [${tagsStr}]
   // 监听页面导航（单页应用）
   let lastUrl = location.href;
   let navDebounceTimer = null;
-  const observer = new MutationObserver(() => {
+  let rawBtnScanTimer = null;
+  const observer = new MutationObserver((mutations) => {
     const url = location.href;
     if (url !== lastUrl) {
       lastUrl = url;
@@ -4594,6 +4843,14 @@ tags: [${tagsStr}]
         navDebounceTimer = null;
         initWithRetry(5, 500);
       }, 500);
+    }
+    // 新帖子加载时（无限滚动）补充 Raw 按钮
+    for (const m of mutations) {
+      if (m.addedNodes.length) {
+        if (rawBtnScanTimer) clearTimeout(rawBtnScanTimer);
+        rawBtnScanTimer = setTimeout(() => { rawBtnScanTimer = null; scanAndAddRawButtons(); }, 300);
+        break;
+      }
     }
   });
   observer.observe(document, { subtree: true, childList: true });
