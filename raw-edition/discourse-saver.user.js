@@ -4203,10 +4203,6 @@ ${tagsYaml}
   // 模块6: 用户界面 (UIModule)
   // ============================================================
   const UIModule = (function() {
-    let linkClickCount = 0;
-    let linkClickTimer = null;
-    let lastLinkPostNumber = null;
-
     // 注入样式
     function injectStyles() {
       GM_addStyle(`
@@ -4345,149 +4341,98 @@ ${tagsYaml}
       `);
     }
 
-    // 判断是否为链接按钮
-    function isLinkButton(element) {
-      if (!element) return { isLink: false, postNumber: null };
-
-      if (!ExtractModule.isTopicPage()) {
-        return { isLink: false, postNumber: null };
+    // V5.5.3: 悬浮保存按钮（支持拖拽、移动端）
+    function createFloatingButton() {
+      if (document.getElementById('ds-float-btn')) return;
+      const btn = document.createElement('div');
+      btn.id = 'ds-float-btn';
+      btn.title = '保存帖子（长按更多选项）';
+      btn.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>';
+      const savedPos = (() => { try { return JSON.parse(GM_getValue('ds_float_pos', 'null')); } catch(e) { return null; } })();
+      Object.assign(btn.style, {
+        position: 'fixed', zIndex: '999999',
+        right: savedPos ? 'auto' : '18px', bottom: savedPos ? 'auto' : '80px',
+        left: savedPos ? savedPos.left : 'auto', top: savedPos ? savedPos.top : 'auto',
+        width: '48px', height: '48px', borderRadius: '50%',
+        background: 'linear-gradient(135deg,#667eea,#764ba2)',
+        boxShadow: '0 4px 15px rgba(102,126,234,.55)',
+        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        userSelect: 'none', touchAction: 'none', transition: 'transform .1s,box-shadow .1s',
+      });
+      let dragging = false, moved = false, startX, startY, startL, startT, longTimer;
+      function gp(e) { const t = e.touches ? e.touches[0] : e; return { x: t.clientX, y: t.clientY }; }
+      function onStart(e) {
+        dragging = true; moved = false;
+        const p = gp(e); startX = p.x; startY = p.y;
+        const r = btn.getBoundingClientRect(); startL = r.left; startT = r.top;
+        btn.style.transition = 'none';
+        longTimer = setTimeout(() => { if (!moved) { clearTimeout(longTimer); showFloatMenu(); } }, 600);
+        e.preventDefault();
       }
-
-      const postContainer = element.closest('.topic-post, article[data-post-id]');
-      if (!postContainer) {
-        return { isLink: false, postNumber: null };
+      function onMove(e) {
+        if (!dragging) return;
+        const p = gp(e), dx = p.x - startX, dy = p.y - startY;
+        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) moved = true;
+        if (!moved) return;
+        clearTimeout(longTimer);
+        btn.style.left = Math.max(0, Math.min(window.innerWidth - 48, startL + dx)) + 'px';
+        btn.style.top  = Math.max(0, Math.min(window.innerHeight - 48, startT + dy)) + 'px';
+        btn.style.right = btn.style.bottom = 'auto';
+        e.preventDefault();
       }
-
-      const controlsArea = element.closest('.post-controls, .post-menu-area, .actions, nav.post-controls');
-      if (!controlsArea) {
-        return { isLink: false, postNumber: null };
+      function onEnd() {
+        if (!dragging) return;
+        dragging = false; clearTimeout(longTimer);
+        btn.style.transition = 'transform .1s,box-shadow .1s';
+        if (moved) { GM_setValue('ds_float_pos', JSON.stringify({ left: btn.style.left, top: btn.style.top })); }
+        else { btn.style.transform = 'scale(.88)'; setTimeout(() => btn.style.transform = '', 120); SaveModule.save(null); }
+        moved = false;
       }
-
-      const className = element.className || '';
-      const dataShareUrl = element.getAttribute('data-share-url');
-      const title = element.title || '';
-      const ariaLabel = element.getAttribute('aria-label') || '';
-
-      const hasCopyLinkClass = className.includes('post-action-menu__copy-link') ||
-                                className.includes('copy-link');
-      const hasShareUrl = dataShareUrl !== null && dataShareUrl !== '';
-      const hasShareClass = className.includes('share');
-      const hasShareTitle = title.includes('将此帖子的链接复制到剪贴板') ||
-                            title.includes('复制到剪贴板') ||
-                            title.includes('链接') ||
-                            title.toLowerCase().includes('copy a link') ||
-                            title.toLowerCase().includes('copy') ||
-                            title.toLowerCase().includes('share');
-      const hasShareAria = ariaLabel.includes('链接') ||
-                           ariaLabel.includes('复制') ||
-                           ariaLabel.includes('分享') ||
-                           ariaLabel.toLowerCase().includes('share') ||
-                           ariaLabel.toLowerCase().includes('copy');
-
-      const isLinkLike = hasCopyLinkClass || hasShareUrl || hasShareClass || hasShareTitle || hasShareAria;
-
-      if (!isLinkLike) {
-        return { isLink: false, postNumber: null };
-      }
-
-      const topicPost = element.closest('.topic-post');
-      const postNumber = topicPost?.getAttribute('data-post-number') ||
-                         postContainer.getAttribute('data-post-number') ||
-                         postContainer.querySelector('[data-post-number]')?.getAttribute('data-post-number') ||
-                         '1';
-
-      return { isLink: true, postNumber: postNumber };
+      btn.addEventListener('mousedown', onStart);
+      btn.addEventListener('touchstart', onStart, { passive: false });
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('touchmove', onMove, { passive: false });
+      window.addEventListener('mouseup', onEnd);
+      window.addEventListener('touchend', onEnd);
+      document.body.appendChild(btn);
     }
 
-    // 触发原生复制链接
-    function triggerOriginalCopyLink(postNumber) {
-      let linkUrl = window.location.href;
-      linkUrl = linkUrl.replace(/#.*$/, '').replace(/\?.*$/, '');
-
-      if (postNumber !== '1') {
-        const match = linkUrl.match(/^(.*\/t\/[^/]+\/\d+)(\/\d+)?$/);
-        if (match) {
-          linkUrl = match[1] + '/' + postNumber;
-        } else {
-          linkUrl = linkUrl + '/' + postNumber;
-        }
-      }
-
-      GM_setClipboard(linkUrl, 'text');
-
-      if (postNumber === '1') {
-        UtilModule.showNotification('已复制帖子链接', 'success');
-      } else {
-        UtilModule.showNotification(`已复制${postNumber}楼链接`, 'success');
-      }
-    }
-
-    // 劫持链接按钮
-    function hijackLinkButton() {
-      document.addEventListener('click', (e) => {
-        let target = e.target.closest('button');
-        if (!target) {
-          target = e.target.closest('a');
-        }
-
-        if (target?.hasAttribute('data-ds-bypass')) {
-          return;
-        }
-
-        const linkResult = isLinkButton(target);
-
-        if (target && linkResult.isLink) {
-          e.preventDefault();
-          e.stopPropagation();
-          e.stopImmediatePropagation();
-
-          const isSameButton = lastLinkPostNumber === linkResult.postNumber;
-
-          if (isSameButton) {
-            linkClickCount++;
-          } else {
-            if (linkClickTimer) {
-              clearTimeout(linkClickTimer);
-              linkClickTimer = null;
-            }
-            linkClickCount = 1;
-          }
-
-          lastLinkPostNumber = linkResult.postNumber;
-
-          if (linkClickTimer) {
-            clearTimeout(linkClickTimer);
-          }
-
-          if (linkClickCount === 2 && isSameButton) {
-            // 双击：复制链接
-            linkClickCount = 0;
-            lastLinkPostNumber = null;
-            triggerOriginalCopyLink(linkResult.postNumber);
-          } else {
-            // 等待判断
-            const postNumber = linkResult.postNumber;
-            linkClickTimer = setTimeout(() => {
-              if (linkClickCount === 1) {
-                // 单击：保存
-                if (postNumber === '1') {
-                  console.log('[Discourse Saver] 单击主帖链接按钮');
-                  SaveModule.save(null);
-                } else {
-                  console.log('[Discourse Saver] 单击评论链接按钮，楼层:', postNumber);
-                  SaveModule.save(postNumber);
-                }
-              }
-              linkClickCount = 0;
-              lastLinkPostNumber = null;
-            }, 300);
-          }
-
-          return false;
-        }
-      }, true);
-
-      console.log('[Discourse Saver] 链接按钮劫持已激活');
+    function showFloatMenu() {
+      const ex = document.getElementById('ds-float-menu');
+      if (ex) { ex.remove(); return; }
+      const btn = document.getElementById('ds-float-btn');
+      const r = btn.getBoundingClientRect();
+      const menu = document.createElement('div');
+      menu.id = 'ds-float-menu';
+      const items = [
+        ['💾 保存全部', () => SaveModule.save(null)],
+        ['📝 仅 Obsidian', () => SaveModule.saveToObsidianOnly(null)],
+        ['📑 仅 Notion', () => SaveModule.saveToNotionOnly(null)],
+        ['🐦 仅飞书', () => SaveModule.saveToFeishuOnly(null)],
+        ['📄 导出 HTML', () => SaveModule.exportHtmlOnly(null)],
+      ];
+      Object.assign(menu.style, {
+        position: 'fixed', zIndex: '1000000',
+        right: (window.innerWidth - r.right) + 'px',
+        bottom: (window.innerHeight - r.top + 10) + 'px',
+        background: '#fff', borderRadius: '12px',
+        boxShadow: '0 8px 32px rgba(0,0,0,.18)',
+        overflow: 'hidden', minWidth: '160px', fontSize: '14px',
+      });
+      items.forEach(([text, fn]) => {
+        const el = document.createElement('div');
+        el.textContent = text;
+        Object.assign(el.style, { padding: '12px 18px', cursor: 'pointer', borderBottom: '1px solid #f0f0f0' });
+        el.addEventListener('pointerover', () => el.style.background = '#f5f5f5');
+        el.addEventListener('pointerout', () => el.style.background = '');
+        el.addEventListener('click', () => { menu.remove(); fn(); });
+        menu.appendChild(el);
+      });
+      document.body.appendChild(menu);
+      setTimeout(() => document.addEventListener('click', function h(e) {
+        if (!menu.contains(e.target) && e.target !== btn) menu.remove();
+        document.removeEventListener('click', h);
+      }), 100);
     }
 
     // 显示设置面板
@@ -4936,7 +4881,6 @@ ${tagsYaml}
       console.log('[Discourse Saver] - 当前 URL:', window.location.href);
 
       injectStyles();
-      hijackLinkButton();
       createFloatingButton();
 
       // 注册油猴菜单
