@@ -3,6 +3,7 @@
 > **维护说明**：当前仅维护 **Raw Edition 特别版**（`raw-edition/` 目录）。
 > 稳定版（根目录）和油猴脚本（`.user.js`）**不再更新**，代码保留供参考。
 > 请使用 [Raw Edition](raw-edition/) 获取最新功能与 Bug 修复。
+> 油猴脚本一键安装：[discourse-saver-raw.user.js](https://raw.githubusercontent.com/acheng-byte/discourse-saver/main/raw-edition/discourse-saver.user.js)
 
 
 **中文 | [English](README_EN.md)**
@@ -229,7 +230,7 @@
 | **四平台保存** | Obsidian / 飞书 / Notion / HTML 导出 |
 | **评论保存** | 支持折叠模式和用户名超链接 |
 
-> **安装地址**：[油猴脚本一键安装页面](https://acheng-byte.github.io/discourse-saver/install.html)
+> **安装地址**：[油猴脚本一键安装页面](https://raw.githubusercontent.com/acheng-byte/discourse-saver/main/raw-edition/discourse-saver.user.js)
 
 ### 评论用户名超链接（V4.3.8）
 
@@ -303,7 +304,7 @@
 ### 方式一：油猴脚本安装（推荐，跨浏览器通用）
 
 1. 安装 [Tampermonkey](https://www.tampermonkey.net/) 浏览器扩展
-2. 访问 [油猴脚本一键安装页面](https://acheng-byte.github.io/discourse-saver/install.html)
+2. 访问 [油猴脚本一键安装页面](https://raw.githubusercontent.com/acheng-byte/discourse-saver/main/raw-edition/discourse-saver.user.js)
 3. 点击「一键复制」按钮复制完整脚本
 4. 打开 Tampermonkey 仪表盘 → 新建脚本 → 粘贴代码 → 保存
 
@@ -838,7 +839,7 @@
   - 40+ Discourse 论坛通过 @match 规则匹配
   - 支持 Obsidian / Notion / HTML 导出
   - 评论保存、折叠模式、用户名超链接
-  - [一键安装页面](https://acheng-byte.github.io/discourse-saver/install.html)
+  - [一键安装页面](https://raw.githubusercontent.com/acheng-byte/discourse-saver/main/raw-edition/discourse-saver.user.js)
 
 ### v4.3.8 (2026-03-15)
 
