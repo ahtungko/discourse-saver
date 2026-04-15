@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Discourse Saver (油猴版 · Raw 特别版)
 // @namespace    https://github.com/discourse-saver
-// @version      5.5.5-raw
+// @version      5.5.6-raw
 // @description  通用Discourse论坛内容保存工具 Raw特别版 - 直接使用Discourse原始Markdown，表格/代码块零损耗，支持Obsidian/飞书/Notion/HTML
 // @author       阿成
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=obsidian.md
@@ -4359,22 +4359,23 @@ ${tagsYaml}
         cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
         userSelect: 'none', touchAction: 'none', transition: 'transform .1s,box-shadow .1s',
       });
-      let dragging = false, moved = false, startX, startY, startL, startT, longTimer;
+      let dragging = false, moved = false, longPressed = false, startX, startY, startL, startT, longTimer;
       function gp(e) { const t = e.touches ? e.touches[0] : e; return { x: t.clientX, y: t.clientY }; }
       function onStart(e) {
-        dragging = true; moved = false;
+        dragging = true; moved = false; longPressed = false;
         const p = gp(e); startX = p.x; startY = p.y;
         const r = btn.getBoundingClientRect(); startL = r.left; startT = r.top;
         btn.style.transition = 'none';
-        longTimer = setTimeout(() => { if (!moved) { clearTimeout(longTimer); showFloatMenu(); } }, 600);
+        longTimer = setTimeout(() => {
+          if (!moved) { longPressed = true; showFloatMenu(); }
+        }, 600);
         e.preventDefault();
       }
       function onMove(e) {
         if (!dragging) return;
         const p = gp(e), dx = p.x - startX, dy = p.y - startY;
-        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) moved = true;
+        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) { moved = true; clearTimeout(longTimer); }
         if (!moved) return;
-        clearTimeout(longTimer);
         btn.style.left = Math.max(0, Math.min(window.innerWidth - 48, startL + dx)) + 'px';
         btn.style.top  = Math.max(0, Math.min(window.innerHeight - 48, startT + dy)) + 'px';
         btn.style.right = btn.style.bottom = 'auto';
@@ -4384,9 +4385,13 @@ ${tagsYaml}
         if (!dragging) return;
         dragging = false; clearTimeout(longTimer);
         btn.style.transition = 'transform .1s,box-shadow .1s';
-        if (moved) { GM_setValue('ds_float_pos', JSON.stringify({ left: btn.style.left, top: btn.style.top })); }
-        else { btn.style.transform = 'scale(.88)'; setTimeout(() => btn.style.transform = '', 120); SaveModule.save(null); }
-        moved = false;
+        if (moved) {
+          GM_setValue('ds_float_pos', JSON.stringify({ left: btn.style.left, top: btn.style.top }));
+        } else if (!longPressed) {
+          btn.style.transform = 'scale(.88)'; setTimeout(() => btn.style.transform = '', 120);
+          SaveModule.save(null);
+        }
+        moved = false; longPressed = false;
       }
       btn.addEventListener('mousedown', onStart);
       btn.addEventListener('touchstart', onStart, { passive: false });
@@ -4443,7 +4448,7 @@ ${tagsYaml}
       overlay.className = 'ds-settings-overlay';
       overlay.innerHTML = `
         <div class="ds-settings-panel">
-          <h2>📝 Discourse Saver 设置 (V5.5.5)</h2>
+          <h2>📝 Discourse Saver 设置 (V5.5.6)</h2>
 
           <div class="ds-section-title">自定义站点</div>
 
@@ -4651,9 +4656,11 @@ ${tagsYaml}
             </div>
           </div>
 
-          <div class="ds-btn-group">
-            <button class="ds-btn ds-btn-secondary" id="ds-cancel">取消</button>
-            <button class="ds-btn ds-btn-primary" id="ds-save">保存设置</button>
+          <div class="ds-btn-group" style="flex-wrap:wrap;gap:8px;">
+            <button class="ds-btn ds-btn-secondary" id="ds-cancel" style="flex:1;min-width:80px;">取消</button>
+            <button class="ds-btn ds-btn-secondary" id="ds-export-config" style="flex:1;min-width:80px;">导出配置</button>
+            <label class="ds-btn ds-btn-secondary" id="ds-import-config-label" style="flex:1;min-width:80px;text-align:center;cursor:pointer;margin:0;">导入配置<input type="file" id="ds-import-config" accept=".json" style="display:none;"></label>
+            <button class="ds-btn ds-btn-primary" id="ds-save" style="flex:2;min-width:120px;">保存设置</button>
           </div>
         </div>
       `;
@@ -4810,6 +4817,38 @@ ${tagsYaml}
         overlay.remove();
       });
 
+      // 导出配置
+      overlay.querySelector('#ds-export-config').addEventListener('click', () => {
+        const cfg = ConfigModule.get();
+        const json = JSON.stringify(cfg, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'discourse-saver-config.json';
+        a.click();
+        URL.revokeObjectURL(url);
+        UtilModule.showNotification('配置已导出', 'success');
+      });
+
+      // 导入配置
+      overlay.querySelector('#ds-import-config').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          try {
+            const imported = JSON.parse(ev.target.result);
+            ConfigModule.setAll(imported);
+            overlay.remove();
+            UtilModule.showNotification('配置已导入，重新打开设置即可看到', 'success');
+          } catch (err) {
+            UtilModule.showNotification('导入失败：JSON 格式不正确', 'error');
+          }
+        };
+        reader.readAsText(file);
+      });
+
       // 保存按钮
       overlay.querySelector('#ds-save').addEventListener('click', () => {
         const newConfig = {
@@ -4910,7 +4949,7 @@ ${tagsYaml}
               '找到帖子流: ' + info.hasPostStream);
       });
 
-      console.log('[Discourse Saver] 油猴脚本已加载 (V5.5.5)');
+      console.log('[Discourse Saver] 油猴脚本已加载 (V5.5.6)');
     }
 
     return { init, showSettingsPanel };
