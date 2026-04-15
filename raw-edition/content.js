@@ -1280,11 +1280,9 @@
         const src = node.href || img.src;
         const fullSrc = src.startsWith('http') ? src : 'https://linux.do' + src;
 
-        // 使用data-base62-sha1或简化的alt
-        // V4.3.8: 移除内部换行符，防止图片语法被拆分
-        const alt = (img.getAttribute('data-base62-sha1') ||
-                    img.alt?.replace(/[_\d]+$/, '').trim() ||
-                    'image').replace(/[\r\n]+/g, ' ').trim();
+        // 清理 alt：去掉 |WxH 尺寸标注、末尾数字下划线
+        const rawAlt = img.getAttribute('data-base62-sha1') || img.alt || '';
+        const alt = rawAlt.replace(/\|\d+x\d+/g, '').replace(/[_\d]+$/, '').replace(/[\r\n]+/g, ' ').trim() || 'image';
 
         return '\n\n![' + alt + '](' + fullSrc + ')\n\n';
       }
@@ -1382,8 +1380,9 @@
         if (!src) return '';
 
         const fullSrc = src.startsWith('http') ? src : 'https://linux.do' + src;
-        // V4.3.8: 移除内部换行符，防止图片语法被拆分
-        const alt = (node.alt?.replace(/[_\d]+$/, '').trim() || 'image').replace(/[\r\n]+/g, ' ').trim();
+        // 清理 alt：去掉 |WxH 尺寸标注、末尾数字下划线
+        const rawAlt = node.alt || '';
+        const alt = rawAlt.replace(/\|\d+x\d+/g, '').replace(/[_\d]+$/, '').replace(/[\r\n]+/g, ' ').trim() || 'image';
 
         return '\n\n![' + alt + '](' + fullSrc + ')\n\n';
       }
@@ -1626,7 +1625,17 @@
       markdown = markdown.replace(/!\[[^\]]*\]\([^)]*\.gif[^)]*\)/gi, '');
     }
 
-    // 8. 移除多余空行
+    // 8. 处理 [spoiler]...[/spoiler] BBCode：保留内容，去掉标签
+    markdown = markdown.replace(/\[spoiler\]([\s\S]*?)\[\/spoiler\]/gi, (_, content) => {
+      return '\n\n' + content.trim() + '\n\n';
+    });
+    markdown = markdown.replace(/\[\/?spoiler\]/gi, '');
+
+    // 9. 移除 raw markdown 中的 Discourse 文本表情码 :emoji_name:（OB 不渲染）
+    // 匹配 :name: 格式，排除在代码、链接、图片语法中的
+    markdown = markdown.replace(/(?<![`\[!(\w]):[a-z_0-9+\-]{2,30}:(?![`\])\w])/gi, '');
+
+    // 10. 移除多余空行
     markdown = markdown.replace(/\n{3,}/g, '\n\n');
 
     return markdown;
@@ -4862,3 +4871,4 @@ tags: [${tagsStr}]
   });
 
 })();
+
