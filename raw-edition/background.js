@@ -3024,9 +3024,10 @@ async function downloadMediaToVault(config, mediaUrls, vaultMediaPath, mediaFold
       headers: { 'Authorization': `Bearer ${config.restApiKey}` }
     });
   } catch (e) {
-    // HTTPS 失败，降级到 HTTP
+    // HTTPS 失败，降级到 HTTP（Obsidian REST API HTTPS=27124, HTTP=27123）
     useHttps = false;
-    apiBase = `http://127.0.0.1:${port}`;
+    const httpPort = port === 27124 ? 27123 : port;
+    apiBase = `http://127.0.0.1:${httpPort}`;
     bgLog('WARN', `HTTPS 连接失败，自动降级到 HTTP: ${apiBase}`);
   }
 
@@ -3464,3 +3465,4 @@ async function testSiyuanConnection(config) {
 }
 
 console.log('[Discourse Saver] Background script 已加载 (V5.3.2)');
+
