@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Discourse Saver (油猴版 · Raw 特别版)
 // @namespace    https://github.com/discourse-saver
-// @version      5.5.6-raw
+// @version      5.5.7-raw
 // @description  通用Discourse论坛内容保存工具 Raw特别版 - 直接使用Discourse原始Markdown，表格/代码块零损耗，支持Obsidian/飞书/Notion/HTML
 // @author       阿成
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=obsidian.md
@@ -4409,35 +4409,86 @@ ${tagsYaml}
       const r = btn.getBoundingClientRect();
       const menu = document.createElement('div');
       menu.id = 'ds-float-menu';
-      const items = [
-        ['💾 保存全部', () => SaveModule.save(null)],
-        ['📝 仅 Obsidian', () => SaveModule.saveToObsidianOnly(null)],
-        ['📑 仅 Notion', () => SaveModule.saveToNotionOnly(null)],
-        ['🐦 仅飞书', () => SaveModule.saveToFeishuOnly(null)],
-        ['📄 导出 HTML', () => SaveModule.exportHtmlOnly(null)],
-      ];
+
+      // 解析楼层字符串："5" / "2,5,8" / "2-8" / "1-5,8,10-12"
+      function parseFloors(str) {
+        const floors = new Set();
+        for (const part of str.replace(/\s/g, '').split(',')) {
+          if (!part) continue;
+          const m = part.match(/^(\d+)-(\d+)$/);
+          if (m) {
+            const a = +m[1], b = +m[2];
+            if (a > b || b - a > 500) return null;
+            for (let i = a; i <= b; i++) floors.add(i);
+          } else if (/^\d+$/.test(part)) {
+            floors.add(+part);
+          } else return null;
+        }
+        return floors.size > 0 ? Array.from(floors).sort((a, b) => a - b) : null;
+      }
+
+      menu.innerHTML = `
+        <div style="padding:10px 14px 6px;font-weight:600;font-size:13px;color:#667eea;border-bottom:1px solid #f0f0f0;">Discourse Saver</div>
+        <div id="dsm-save-all" style="padding:10px 14px;cursor:pointer;font-size:14px;border-bottom:1px solid #f0f0f0;">💾 保存整个帖子</div>
+        <div style="padding:8px 14px 4px;font-size:12px;color:#999;">指定楼层（如: 5 或 2-8 或 1,3,5-7）</div>
+        <div style="padding:4px 14px 10px;display:flex;gap:6px;align-items:center;">
+          <input id="dsm-floor-input" type="text" placeholder="楼层范围" style="flex:1;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;outline:none;min-width:0;">
+          <button id="dsm-floor-go" style="padding:6px 12px;background:#667eea;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;white-space:nowrap;">保存</button>
+        </div>
+        <div id="dsm-floor-hint" style="padding:0 14px 8px;font-size:11px;color:#999;min-height:16px;"></div>
+      `;
+
+      // 定位：按钮左侧弹出，不够则右侧
+      const menuW = 220;
+      let left = r.left - menuW - 10;
+      let top = r.top;
+      if (left < 8) left = r.right + 10;
+      if (top + 180 > window.innerHeight) top = window.innerHeight - 185;
       Object.assign(menu.style, {
-        position: 'fixed', zIndex: '1000000',
-        right: (window.innerWidth - r.right) + 'px',
-        bottom: (window.innerHeight - r.top + 10) + 'px',
-        background: '#fff', borderRadius: '12px',
-        boxShadow: '0 8px 32px rgba(0,0,0,.18)',
-        overflow: 'hidden', minWidth: '160px', fontSize: '14px',
+        position: 'fixed', zIndex: '1000000', left: left + 'px', top: top + 'px',
+        background: '#fff', borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,.18)',
+        width: menuW + 'px', fontSize: '14px',
       });
-      items.forEach(([text, fn]) => {
-        const el = document.createElement('div');
-        el.textContent = text;
-        Object.assign(el.style, { padding: '12px 18px', cursor: 'pointer', borderBottom: '1px solid #f0f0f0' });
-        el.addEventListener('pointerover', () => el.style.background = '#f5f5f5');
-        el.addEventListener('pointerout', () => el.style.background = '');
-        el.addEventListener('click', () => { menu.remove(); fn(); });
-        menu.appendChild(el);
-      });
+
       document.body.appendChild(menu);
-      setTimeout(() => document.addEventListener('click', function h(e) {
-        if (!menu.contains(e.target) && e.target !== btn) menu.remove();
-        document.removeEventListener('click', h);
-      }), 100);
+
+      function closeMenu() { menu.remove(); document.removeEventListener('click', outsideClick); }
+      function outsideClick(e) { if (!menu.contains(e.target) && e.target !== btn) closeMenu(); }
+
+      // 保存整帖
+      menu.querySelector('#dsm-save-all').addEventListener('click', () => { closeMenu(); SaveModule.save(null); });
+      menu.querySelector('#dsm-save-all').addEventListener('pointerover', e => e.currentTarget.style.background = '#f5f5f5');
+      menu.querySelector('#dsm-save-all').addEventListener('pointerout', e => e.currentTarget.style.background = '');
+
+      // 楼层输入实时提示
+      const input = menu.querySelector('#dsm-floor-input');
+      const hint = menu.querySelector('#dsm-floor-hint');
+      input.addEventListener('input', () => {
+        const v = input.value.trim();
+        if (!v) { hint.textContent = ''; return; }
+        const floors = parseFloors(v);
+        if (!floors) { hint.style.color = '#ef4444'; hint.textContent = '格式错误'; }
+        else { hint.style.color = '#22c55e'; hint.textContent = `共 ${floors.length} 楼: ${floors.slice(0, 6).join(', ')}${floors.length > 6 ? '...' : ''}`; }
+      });
+
+      // 执行楼层保存
+      function doFloorSave() {
+        const v = input.value.trim();
+        if (!v) { input.style.borderColor = '#ef4444'; input.focus(); return; }
+        const floors = parseFloors(v);
+        if (!floors) { input.style.borderColor = '#ef4444'; hint.style.color = '#ef4444'; hint.textContent = '格式错误'; return; }
+        closeMenu();
+        if (floors.length === 1) {
+          SaveModule.save(floors[0] === 1 ? null : String(floors[0]));
+        } else {
+          SaveModule.save(floors);
+        }
+      }
+
+      menu.querySelector('#dsm-floor-go').addEventListener('click', doFloorSave);
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') doFloorSave(); if (e.key === 'Escape') closeMenu(); });
+
+      setTimeout(() => { document.addEventListener('click', outsideClick); input.focus(); }, 100);
     }
 
     // 显示设置面板
@@ -4448,7 +4499,7 @@ ${tagsYaml}
       overlay.className = 'ds-settings-overlay';
       overlay.innerHTML = `
         <div class="ds-settings-panel">
-          <h2>📝 Discourse Saver 设置 (V5.5.6)</h2>
+          <h2>📝 Discourse Saver 设置 (V5.5.7)</h2>
 
           <div class="ds-section-title">自定义站点</div>
 
@@ -4949,7 +5000,7 @@ ${tagsYaml}
               '找到帖子流: ' + info.hasPostStream);
       });
 
-      console.log('[Discourse Saver] 油猴脚本已加载 (V5.5.6)');
+      console.log('[Discourse Saver] 油猴脚本已加载 (V5.5.7)');
     }
 
     return { init, showSettingsPanel };
