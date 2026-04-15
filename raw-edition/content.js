@@ -4537,18 +4537,18 @@ tags: [${tagsStr}]
       .ds-raw-wrapper {
         margin: 12px 0 16px 0;
         border-radius: 8px;
-        border: 1px solid var(--primary-low, #e1e4e8);
-        background: var(--secondary, #fff);
-        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        border: 1px solid var(--primary-low);
+        background: var(--secondary);
+        box-shadow: 0 1px 4px rgba(0,0,0,0.05);
         overflow: hidden;
       }
       .ds-raw-header {
         display: flex; align-items: center; justify-content: space-between;
-        padding: 8px 14px;
-        background: var(--primary-very-low, #f6f8fa);
-        border-bottom: 1px solid var(--primary-low, #e1e4e8);
+        padding: 7px 14px;
+        background: var(--secondary);
+        border-bottom: 1px solid var(--primary-low);
         font-size: 13px;
-        color: var(--primary-medium, #666);
+        color: var(--primary-medium);
       }
       .ds-raw-label { font-weight: 500; }
       .ds-raw-copy-btn {
@@ -4557,13 +4557,13 @@ tags: [${tagsStr}]
         font-size: 12px; font-weight: 600;
         border-radius: 6px;
         cursor: pointer;
-        border: 1px solid var(--primary-low, #d0d7de);
-        background: var(--secondary, #fff);
-        color: var(--primary-medium, #57606a);
+        border: 1px solid var(--primary-low);
+        background: var(--secondary);
+        color: var(--primary-medium);
         transition: all 0.15s;
       }
-      .ds-raw-copy-btn:hover { color: #2da44e; border-color: #2da44e; }
-      .ds-raw-copy-btn.ds-copied { background: #2da44e; color: #fff; border-color: #2da44e; }
+      .ds-raw-copy-btn:hover { color: var(--tertiary); border-color: var(--tertiary); }
+      .ds-raw-copy-btn.ds-copied { background: var(--success); color: #fff; border-color: var(--success); }
       .ds-raw-copy-btn svg { width: 13px; height: 13px; fill: currentColor; }
       .ds-raw-textarea {
         display: block; width: 100%;
@@ -4572,8 +4572,8 @@ tags: [${tagsStr}]
         font-family: "JetBrains Mono","Fira Code","SF Mono",Consolas,monospace;
         font-size: 13px; line-height: 1.6;
         border: none; outline: none; resize: vertical;
-        background: var(--secondary, #fff);
-        color: var(--primary, #222);
+        background: var(--secondary);
+        color: var(--primary);
         box-sizing: border-box;
         overflow: auto;
       }
