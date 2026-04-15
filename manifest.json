@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Discourse Saver",
-  "version": "5.5.1",
+  "version": "5.5.2",
   "description": "通用Discourse论坛内容保存工具 - 支持全球数百个Discourse站点（LinuxDo、Rust Users、Docker等），悬浮按钮一键保存/长按选楼层，支持Obsidian/飞书/Notion/HTML",
   "permissions": [
     "storage",
@@ -22,8 +22,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["detector.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "detector.js"
+      ],
       "run_at": "document_end"
     }
   ],
