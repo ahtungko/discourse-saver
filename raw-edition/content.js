@@ -924,11 +924,11 @@
 
       // 优先：在 URL 中找到包含此 hash 的完整 URL
       const matchedUrl = imgUrls.find(u => u.includes(hashPart));
-      const replacement = matchedUrl || (idx < imgUrls.length ? imgUrls[idx] : null);
-
-      if (replacement) {
-        resolved = resolved.split(token).join(replacement);
-      }
+      // V5.5.3: 优先用 CDN URL，其次按序号匹配，最终 fallback 为 /uploads/short-url/
+      const replacement = matchedUrl ||
+        (idx < imgUrls.length ? imgUrls[idx] : null) ||
+        window.location.origin + '/uploads/short-url/' + tokenBody;
+      resolved = resolved.split(token).join(replacement);
     });
 
     return resolved;
@@ -1593,7 +1593,8 @@
     markdown = markdown.replace(/\[\/details\]/g, '');
 
     // 0.1 清理图片 alt 中的 Discourse 尺寸语法 ![text|WxH](url) → ![text](url)
-    markdown = markdown.replace(/!\[([^\]]*)\|\d+x\d+\]/g, '![$1]');
+    // V5.5.3: 同时清理 |WxH, scale% 等扩展格式
+    markdown = markdown.replace(/!\[([^\]]*)\|[^\]]+\]/g, '![$1]');
 
     // 1. 移除空锚点链接 [](#anchor-id)
     markdown = markdown.replace(/\[\s*\]\(#[^)]*\)/g, '');
