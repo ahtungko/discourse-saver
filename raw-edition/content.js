@@ -1282,7 +1282,7 @@
 
         // 清理 alt：去掉 |WxH 尺寸标注、末尾数字下划线
         const rawAlt = img.getAttribute('data-base62-sha1') || img.alt || '';
-        const alt = rawAlt.replace(/\|\d+x\d+/g, '').replace(/[_\d]+$/, '').replace(/[\r\n]+/g, ' ').trim() || 'image';
+        const alt = rawAlt.replace(/\|[^\]|]+/g, '').replace(/[_\d]+$/, '').replace(/[\r\n]+/g, ' ').trim() || 'image';
 
         return '\n\n![' + alt + '](' + fullSrc + ')\n\n';
       }
@@ -1382,7 +1382,7 @@
         const fullSrc = src.startsWith('http') ? src : src.startsWith('upload://') ? window.location.origin + '/uploads/short-url/' + src.slice(9) : window.location.origin + src;
         // 清理 alt：去掉 |WxH 尺寸标注、末尾数字下划线
         const rawAlt = node.alt || '';
-        const alt = rawAlt.replace(/\|\d+x\d+/g, '').replace(/[_\d]+$/, '').replace(/[\r\n]+/g, ' ').trim() || 'image';
+        const alt = rawAlt.replace(/\|[^\]|]+/g, '').replace(/[_\d]+$/, '').replace(/[\r\n]+/g, ' ').trim() || 'image';
 
         return '\n\n![' + alt + '](' + fullSrc + ')\n\n';
       }
