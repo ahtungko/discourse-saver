@@ -1215,7 +1215,7 @@
 
         // 使用原图链接（href）而非缩略图
         const src = node.href || img.src;
-        const fullSrc = src.startsWith('http') ? src : 'https://linux.do' + src;
+        const fullSrc = src.startsWith('http') ? src : src.startsWith('upload://') ? window.location.origin + '/uploads/short-url/' + src.slice(9) : window.location.origin + src;
 
         // 清理 alt：去掉 |WxH 尺寸标注、末尾数字下划线
         const rawAlt = img.getAttribute('data-base62-sha1') || img.alt || '';
@@ -1316,7 +1316,7 @@
         const src = node.src;
         if (!src) return '';
 
-        const fullSrc = src.startsWith('http') ? src : 'https://linux.do' + src;
+        const fullSrc = src.startsWith('http') ? src : src.startsWith('upload://') ? window.location.origin + '/uploads/short-url/' + src.slice(9) : window.location.origin + src;
         // 清理 alt：去掉 |WxH 尺寸标注、末尾数字下划线
         const rawAlt = node.alt || '';
         const alt = rawAlt.replace(/\|\d+x\d+/g, '').replace(/[_\d]+$/, '').replace(/[\r\n]+/g, ' ').trim() || 'image';
@@ -1367,7 +1367,7 @@
         }
 
         if (!src) return '';
-        const fullSrc = src.startsWith('http') ? src : 'https://linux.do' + src;
+        const fullSrc = src.startsWith('http') ? src : src.startsWith('upload://') ? window.location.origin + '/uploads/short-url/' + src.slice(9) : window.location.origin + src;
         return '\n\n![video](' + fullSrc + ')\n\n';
       }
     });
@@ -1671,8 +1671,12 @@
     const mediaUrls = [];
     let match;
     while ((match = imageRegex.exec(markdown)) !== null) {
-      const url = match[2];
+      let url = match[2];
       if (url && !url.startsWith('data:')) {
+        // V5.5.2: 将 Discourse 内部 upload:// 短链转换为可访问的 HTTP URL
+        if (url.startsWith('upload://')) {
+          url = window.location.origin + '/uploads/short-url/' + url.slice(9);
+        }
         mediaUrls.push({ url, type: 'image' });
       }
     }
@@ -1753,8 +1757,12 @@
     const mediaUrls = [];
     let match;
     while ((match = imageRegex.exec(markdown)) !== null) {
-      const url = match[2];
+      let url = match[2];
       if (url && !url.startsWith('data:')) {
+        // V5.5.2: 将 Discourse 内部 upload:// 短链转换为可访问的 HTTP URL
+        if (url.startsWith('upload://')) {
+          url = window.location.origin + '/uploads/short-url/' + url.slice(9);
+        }
         mediaUrls.push({ url, type: 'image' });
       }
     }
