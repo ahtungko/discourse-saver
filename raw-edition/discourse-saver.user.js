@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Discourse Saver (油猴版 · Raw 特别版)
 // @namespace    https://github.com/discourse-saver
-// @version      5.5.0-raw
+// @version      5.5.1-raw
 // @description  通用Discourse论坛内容保存工具 Raw特别版 - 直接使用Discourse原始Markdown，表格/代码块零损耗，支持Obsidian/飞书/Notion/HTML
 // @author       阿成
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=obsidian.md
@@ -1821,9 +1821,9 @@
 
           const src = node.href || img.src;
           const fullSrc = src.startsWith('http') ? src : window.location.origin + src;
-          const alt = (img.getAttribute('data-base62-sha1') ||
-                      img.alt?.replace(/[_\d]+$/, '').trim() ||
-                      'image').replace(/[\r\n]+/g, ' ').trim();
+          // 清理 alt：去掉 |WxH 尺寸标注、末尾数字下划线
+          const rawAlt = img.getAttribute('data-base62-sha1') || img.alt || '';
+          const alt = rawAlt.replace(/\|\d+x\d+/g, '').replace(/[_\d]+$/, '').replace(/[\r\n]+/g, ' ').trim() || 'image';
 
           return '\n\n![' + alt + '](' + fullSrc + ')\n\n';
         }
@@ -1842,7 +1842,9 @@
           if (!src) return '';
 
           const fullSrc = src.startsWith('http') ? src : window.location.origin + src;
-          const alt = (node.alt?.replace(/[_\d]+$/, '').trim() || 'image').replace(/[\r\n]+/g, ' ').trim();
+          // 清理 alt：去掉 |WxH 尺寸标注、末尾数字下划线
+          const rawAlt = node.alt || '';
+          const alt = rawAlt.replace(/\|\d+x\d+/g, '').replace(/[_\d]+$/, '').replace(/[\r\n]+/g, ' ').trim() || 'image';
 
           return '\n\n![' + alt + '](' + fullSrc + ')\n\n';
         }
@@ -1948,6 +1950,14 @@
       markdown = markdown.replace(/!!\[/g, '![');
       // 移除GIF
       markdown = markdown.replace(/!\[[^\]]*\]\([^)]*\.gif[^)]*\)/gi, '');
+      // 清理 Discourse 图片 alt 中的尺寸标注 ![name|230x500](url) → ![name](url)
+      markdown = markdown.replace(/!\[([^\]]*?)\|\d+x\d+\]/g, '![$1]');
+      // 处理 [spoiler]...[/spoiler] BBCode：保留内容，去掉标签
+      markdown = markdown.replace(/\[spoiler\]([\s\S]*?)\[\/spoiler\]/gi, (_, content) => {
+        return '\n\n' + content.trim() + '\n\n';
+      });
+      // 处理单独的未闭合 [spoiler] / [/spoiler] 标签
+      markdown = markdown.replace(/\[\/?spoiler\]/gi, '');
       // 移除多余空行
       markdown = markdown.replace(/\n{3,}/g, '\n\n');
 
@@ -4967,3 +4977,4 @@ ${tagsYaml}
   UIModule.init();
 
 })();
+
