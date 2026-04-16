@@ -2261,22 +2261,38 @@ function buildNotionPageData(postData, config) {
           blockCount++;
         }
       } else {
-        // V4.2.4: 普通段落（可能包含内联图片和链接）
-        const textWithLinks = trimmedLine.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, url) => {
-          let fixedUrl = url;
-          if (url.includes('github.com') && url.includes('/blob/')) {
-            fixedUrl = url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/');
+        // V5.5.3: 拆分行内图片为独立 image 块，文字段落单独处理
+        const inlineImgRe = /!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g;
+        if (inlineImgRe.test(trimmedLine)) {
+          inlineImgRe.lastIndex = 0;
+          let lastIdx = 0, m2;
+          while ((m2 = inlineImgRe.exec(trimmedLine)) !== null) {
+            const before = trimmedLine.slice(lastIdx, m2.index).trim();
+            if (before) {
+              children.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: parseMarkdownToRichText(before, siteOrigin) } });
+              blockCount++;
+            }
+            let imgUrl = m2[2];
+            if (imgUrl.includes('github.com') && imgUrl.includes('/blob/')) {
+              imgUrl = imgUrl.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/');
+            }
+            children.push({ object: 'block', type: 'image', image: { type: 'external', external: { url: imgUrl } } });
+            blockCount++;
+            lastIdx = m2.index + m2[0].length;
           }
-          return `[图片: ${alt}](${fixedUrl})`;
-        });
-        children.push({
-          object: 'block',
-          type: 'paragraph',
-          paragraph: {
-            rich_text: parseMarkdownToRichText(textWithLinks, siteOrigin)
+          const after = trimmedLine.slice(lastIdx).trim();
+          if (after) {
+            children.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: parseMarkdownToRichText(after, siteOrigin) } });
+            blockCount++;
           }
-        });
-        blockCount++;
+        } else {
+          children.push({
+            object: 'block',
+            type: 'paragraph',
+            paragraph: { rich_text: parseMarkdownToRichText(trimmedLine, siteOrigin) }
+          });
+          blockCount++;
+        }
       }
 
       i++; // V4.2.4: 移动到下一行
