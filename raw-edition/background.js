@@ -3000,8 +3000,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // V5.3: 下载媒体文件到 Vault（通过 Obsidian Local REST API）
   if (request.action === 'downloadMediaToVault') {
-    const { config, mediaUrls, vaultMediaPath, mediaFolderName } = request;
-    downloadMediaToVault(config, mediaUrls, vaultMediaPath, mediaFolderName)
+    const { config, mediaUrls, vaultMediaPath, mediaFolderName, forumOrigin } = request;
+    downloadMediaToVault(config, mediaUrls, vaultMediaPath, mediaFolderName, forumOrigin)
       .then(results => sendResponse({ results }))
       .catch(err => sendResponse({ error: err.message, results: [] }));
     return true;
@@ -3027,7 +3027,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // ==================== 下载媒体到 Vault ====================
 
-async function downloadMediaToVault(config, mediaUrls, vaultMediaPath, mediaFolderName) {
+async function downloadMediaToVault(config, mediaUrls, vaultMediaPath, mediaFolderName, forumOrigin = '') {
   const port = config.restApiPort || 27124;
   let apiBase = `https://127.0.0.1:${port}`;
 
@@ -3053,16 +3053,26 @@ async function downloadMediaToVault(config, mediaUrls, vaultMediaPath, mediaFold
 
   for (let i = 0; i < mediaUrls.length; i++) {
     const media = mediaUrls[i];
+    // V5.5.4: 兜底处理未解析的 upload:// URL（正常应在 content.js 中转换）
+    let fetchUrl = media.url;
+    if (fetchUrl.startsWith('upload://') && forumOrigin) {
+      fetchUrl = forumOrigin + '/uploads/short-url/' + fetchUrl.slice(9);
+      bgLog('WARN', `upload:// 兜底转换: ${media.url} → ${fetchUrl}`);
+    } else if (fetchUrl.startsWith('upload://')) {
+      bgLog('WARN', `upload:// URL 无法解析（缺少 forumOrigin），跳过: ${media.url}`);
+      results.push({ originalUrl: media.url, localName: null, relativePath: null, success: false, error: 'upload:// URL 未解析' });
+      continue;
+    }
     try {
-      // 1. 下载媒体文件（V5.3.1: 禁用缓存）
-      const response = await fetch(media.url, { cache: 'no-store' });
+      // 1. 下载媒体文件（V5.3.1: 禁用缓存，V5.5.4: 携带Cookie访问需登录的论坛图片）
+      const response = await fetch(fetchUrl, { cache: 'no-store', credentials: 'include' });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const binaryData = await response.arrayBuffer();
 
-      // 2. 提取文件名
+      // 2. 提取文件名（使用实际 fetch URL，避免 upload:// 无法解析）
       let fileName;
       try {
-        const urlObj = new URL(media.url);
+        const urlObj = new URL(fetchUrl);
         fileName = urlObj.pathname.split('/').pop() || `media_${i}`;
       } catch(e) {
         fileName = `media_${i}`;
