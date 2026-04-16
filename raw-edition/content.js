@@ -902,8 +902,9 @@
   }
 
   // V5.5-raw: 将 cooked HTML 中的图片 URL 映射回 raw 的 upload:// token
+  // V5.5.4: 修复当 cookedHtml 为空时直接返回导致 upload:// 残留的 bug
   function resolveUploadUrls(rawMarkdown, cookedHtml) {
-    if (!rawMarkdown || !cookedHtml) return rawMarkdown;
+    if (!rawMarkdown) return rawMarkdown;
     // 找出 raw 中所有 upload:// token
     const uploadTokens = rawMarkdown.match(/upload:\/\/[^\s\)\"'\]]+/g);
     if (!uploadTokens || uploadTokens.length === 0) return rawMarkdown;
@@ -924,7 +925,7 @@
 
       // 优先：在 URL 中找到包含此 hash 的完整 URL
       const matchedUrl = imgUrls.find(u => u.includes(hashPart));
-      // V5.5.3: 优先用 CDN URL，其次按序号匹配，最终 fallback 为 /uploads/short-url/
+      // V5.5.3: fallback → /uploads/short-url/ 确保 upload:// 一定被替换
       const replacement = matchedUrl ||
         (idx < imgUrls.length ? imgUrls[idx] : null) ||
         window.location.origin + '/uploads/short-url/' + tokenBody;
@@ -1593,7 +1594,7 @@
     markdown = markdown.replace(/\[\/details\]/g, '');
 
     // 0.1 清理图片 alt 中的 Discourse 尺寸语法 ![text|WxH](url) → ![text](url)
-    // V5.5.3: 同时清理 |WxH, scale% 等扩展格式
+    // V5.5.3: 扩展匹配 |WxH, scale% 等所有尺寸标注
     markdown = markdown.replace(/!\[([^\]]*)\|[^\]]+\]/g, '![$1]');
 
     // 1. 移除空锚点链接 [](#anchor-id)
@@ -1763,9 +1764,8 @@
 
     console.log(`[Discourse Saver] 找到 ${mediaUrls.length} 个媒体文件，通过 REST API 写入 Vault...`);
 
-    // 构建媒体文件夹路径
-    const siteFolderPath = config.folderPath || '';
-    const vaultMediaPath = siteFolderPath ? `${siteFolderPath}/${mediaFolderName}` : mediaFolderName;
+    // 媒体文件夹从 Vault 根目录起算，不拼保存文件夹
+    const vaultMediaPath = mediaFolderName;
 
     // 通过 background.js 处理下载（避免 CORS 限制）
     try {
@@ -1777,7 +1777,8 @@
         },
         mediaUrls: mediaUrls,
         vaultMediaPath: vaultMediaPath,
-        mediaFolderName: mediaFolderName
+        mediaFolderName: mediaFolderName,
+        forumOrigin: window.location.origin
       });
 
       if (response && response.results) {
@@ -1845,8 +1846,7 @@
 
     if (mediaUrls.length === 0) return;
 
-    const siteFolderPath = config.folderPath || '';
-    const vaultMediaPath = siteFolderPath ? `${siteFolderPath}/${mediaFolderName}` : mediaFolderName;
+    const vaultMediaPath = mediaFolderName;
 
     console.log(`[Discourse Saver] 后台静默下载 ${mediaUrls.length} 个媒体文件...`);
 
@@ -1860,7 +1860,8 @@
         },
         mediaUrls: mediaUrls,
         vaultMediaPath: vaultMediaPath,
-        mediaFolderName: mediaFolderName
+        mediaFolderName: mediaFolderName,
+        forumOrigin: window.location.origin
       }, (response) => {
         // 静默处理结果，只写日志
         if (chrome.runtime.lastError) {
@@ -2312,7 +2313,7 @@ tags: [${tagsStr}]
       console.log('[Discourse Saver] 媒体下载检查: downloadImages=' + config.downloadImages + ', restApiKey=' + (config.restApiKey ? '已设置(' + config.restApiKey.length + '字符)' : '未设置'));
       if (config.downloadImages && config.restApiKey) {
         rlog('INFO', '下载媒体到Vault, port=' + (config.restApiPort || 27123));
-        const _mediaPreviewPath = (config.folderPath ? config.folderPath + '/' : '') + (config.mediaFolderName || 'media');
+        const _mediaPreviewPath = config.mediaFolderName || 'media';
         showNotification(`正在下载媒体文件到 ${_mediaPreviewPath}...`, 'info');
         markdown = await downloadAndReplaceMedia(markdown, config);
       } else if (config.downloadImages && !config.restApiKey) {
