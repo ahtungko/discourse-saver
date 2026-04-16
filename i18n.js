@@ -3,7 +3,7 @@ const i18n = {
   zh: {
     header: {
       title: 'Discourse Saver - 设置',
-      subtitle: '保存 Discourse 论坛帖子到 Obsidian、飞书、Notion、思源笔记、语雀，或导出 HTML V5.5.0'
+      subtitle: '保存 Discourse 论坛帖子到 Obsidian、飞书、Notion、思源笔记、语雀，或导出 HTML V5.6.5'
     },
     tabs: {
       general: '通用',
@@ -34,7 +34,7 @@ const i18n = {
       empty: '暂无日志'
     },
     pluginStatus: {
-      enabled: '启用插件（关闭后链接按钮恢复原功能）',
+      enabled: '启用插件',
       help: '关闭后需刷新页面生效'
     },
     siteSettings: {
@@ -75,7 +75,7 @@ const i18n = {
       advancedUriHelp: '需先在 Obsidian 中安装 "Advanced URI" 插件',
       testConnection: '测试连接',
       showLogs: '查看日志',
-      folderHelpDetail2: '支持多种路径格式：智囊团/子目录、D:\\Vault\\文件夹、/Users/me/vault/folder',
+      folderHelpDetail2: '支持多种路径格式：Linux do/子目录、D:\\Vault\\文件夹、/Users/me/vault/folder',
       restApiPortHelp: '默认 27124'
     },
     feishu: {
@@ -324,9 +324,9 @@ const i18n = {
     },
     usage: {
       title: '使用方法：',
-      tip: '<strong>使用方法：</strong><br>- 单击链接按钮 → 保存到各平台<br>- 双击链接按钮 → 复制链接<br>- Ctrl+Shift+S (Mac: ⌘+Shift+S) → 快捷键保存',
-      singleClick: '- 单击链接按钮 → 保存到 Obsidian/飞书/Notion/思源笔记/语雀',
-      doubleClick: '- 双击链接按钮 → 复制链接',
+      tip: '<strong>使用方法：</strong><br>- 点击悬浮保存按钮 → 保存整个帖子<br>- 长按悬浮按钮 → 选择楼层保存<br>- Ctrl+Shift+S (Mac: ⌘+Shift+S) → 快捷键保存',
+      singleClick: '- 点击悬浮保存按钮 → 保存到 Obsidian/飞书/Notion/思源笔记/语雀',
+      doubleClick: '- 长按悬浮按钮 → 选择楼层保存',
       shortcut: '- Ctrl+Shift+S（Mac: ⌘+Shift+S）→ 快捷键保存',
       feishuTutorial: '飞书配置教程：',
       feishuTutorialLink: '创建飞书自建应用'
@@ -347,7 +347,7 @@ const i18n = {
   en: {
     header: {
       title: 'Discourse Saver - Settings',
-      subtitle: 'Save Discourse Forum Posts to Obsidian, Feishu, Notion, SiYuan Note, Yuque or Export HTML V5.5.0'
+      subtitle: 'Save Discourse Forum Posts to Obsidian, Feishu, Notion, SiYuan Note, Yuque or Export HTML V5.6.5'
     },
     tabs: {
       general: 'General',
@@ -378,7 +378,7 @@ const i18n = {
       empty: 'No logs yet'
     },
     pluginStatus: {
-      enabled: 'Enable Plugin (Link button restores original function when disabled)',
+      enabled: 'Enable Plugin',
       help: 'Refresh page after changing'
     },
     siteSettings: {
@@ -668,9 +668,9 @@ const i18n = {
     },
     usage: {
       title: 'How to Use:',
-      tip: '<strong>How to Use:</strong><br>- Single click link button → Save to platforms<br>- Double click link button → Copy link<br>- Ctrl+Shift+S (Mac: ⌘+Shift+S) → Keyboard shortcut save',
-      singleClick: '- Single click link button → Save to Obsidian/Feishu/Notion/SiYuan Note/Yuque',
-      doubleClick: '- Double click link button → Copy link',
+      tip: '<strong>How to Use:</strong><br>- Click float save button → Save entire post<br>- Long press float button → Select floors to save<br>- Ctrl+Shift+S (Mac: ⌘+Shift+S) → Keyboard shortcut save',
+      singleClick: '- Click float save button → Save to Obsidian/Feishu/Notion/SiYuan Note/Yuque',
+      doubleClick: '- Long press float button → Select floors to save',
       shortcut: '- Ctrl+Shift+S (Mac: ⌘+Shift+S) → Keyboard shortcut save',
       feishuTutorial: 'Feishu Configuration:',
       feishuTutorialLink: 'Create Feishu App'
