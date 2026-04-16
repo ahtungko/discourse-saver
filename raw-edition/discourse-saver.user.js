@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Discourse Saver (油猴版 · Raw 特别版)
 // @namespace    https://github.com/discourse-saver
-// @version      5.5.8-raw
+// @version      5.5.9-raw
 // @description  通用Discourse论坛内容保存工具 Raw特别版 - 直接使用Discourse原始Markdown，表格/代码块零损耗，支持Obsidian/飞书/Notion/HTML
 // @author       阿成
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=obsidian.md
@@ -2349,8 +2349,11 @@ ${tagsYaml}
 
     // 生成 HTML 内容
     function generateHtmlContent(markdown, metadata) {
+      // 去掉 YAML frontmatter（---...---）
+      const cleanMarkdown = markdown.replace(/^---\n[\s\S]*?\n---\n?/, '').trimStart();
+
       // 简单的 Markdown 转 HTML（基础转换）
-      let htmlBody = markdown
+      let htmlBody = cleanMarkdown
         .replace(/^### (.+)$/gm, '<h3>$1</h3>')
         .replace(/^## (.+)$/gm, '<h2>$1</h2>')
         .replace(/^# (.+)$/gm, '<h1>$1</h1>')
@@ -2384,7 +2387,7 @@ ${tagsYaml}
     pre code { background: none; padding: 0; }
     img { border-radius: 8px; margin: 10px 0; }
     hr { border: none; border-top: 1px solid #e5e7eb; margin: 20px 0; }
-    .metadata { background: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; color: #6b7280; }
+    .metadata { display: none; }
     details { margin: 10px 0; padding: 10px; background: #f9fafb; border-radius: 8px; }
     summary { cursor: pointer; font-weight: 600; }
   </style>
@@ -4541,7 +4544,7 @@ ${tagsYaml}
       overlay.className = 'ds-settings-overlay';
       overlay.innerHTML = `
         <div class="ds-settings-panel">
-          <h2>📝 Discourse Saver 设置 (V5.5.8)</h2>
+          <h2>📝 Discourse Saver 设置 (V5.5.9)</h2>
 
           <div class="ds-section-title">自定义站点</div>
 
@@ -5048,7 +5051,7 @@ ${tagsYaml}
               '找到帖子流: ' + info.hasPostStream);
       });
 
-      console.log('[Discourse Saver] 油猴脚本已加载 (V5.5.8)');
+      console.log('[Discourse Saver] 油猴脚本已加载 (V5.5.9)');
     }
 
     return { init, showSettingsPanel };
