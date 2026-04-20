@@ -12,7 +12,7 @@ Save **any Discourse forum** posts and comments to **Obsidian**, **Feishu Bitabl
 
 > **V5.5.0 Updates** (2026-04-14):
 > - **Feishu Sync in Userscript** - Full Feishu Bitable API implementation with gmFetch
-> - **Removed SiYuan & Yuque** - Focus on Obsidian / Feishu / Notion / HTML
+> - **Removed SiYuan & Yuque (userscript only)** - Userscript now focuses on Obsidian / Feishu / Notion / HTML; Chrome extension still supports SiYuan & Yuque
 > - **Raw API Support** - Comments use `post.raw` native Markdown (zero table/code loss)
 > - **Custom Floor Selection** - Support `5`, `2-8`, `1,3,5`, `1-5,8,10-12` formats
 > - **Bug Fixes** - Notion to-do blocks, video download guard, floor filter logic, etc.
