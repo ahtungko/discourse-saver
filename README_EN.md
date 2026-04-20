@@ -1,8 +1,14 @@
-# Discourse Saver V5.5.0
+# Discourse Saver V5.5.3
 
 **[中文](README.md) | English**
 
+> **Maintenance Notice**: Only **Raw Edition** (`raw-edition/` directory) is actively maintained. The stable version (root) and userscript (`.user.js`) are **no longer updated** — kept for reference only.
+> Use [Raw Edition](raw-edition/) for latest features and bug fixes.
+> One-click userscript install: [discourse-saver-raw.user.js](https://raw.githubusercontent.com/acheng-byte/discourse-saver/main/raw-edition/discourse-saver.user.js)
+
 Save **any Discourse forum** posts and comments to **Obsidian**, **Feishu Bitable**, **Notion**, or export as **HTML files** with one click. Also available as a **Tampermonkey userscript** for cross-browser support. A **Raw Edition** (`raw-edition/`) is also available, using Discourse native Markdown directly for zero-loss tables and code blocks.
+
+> ⚠️ **Important Notice**: **Yuque** and **SiYuan Note** support has been **removed from the userscript in V5.5.0**. The Chrome extension (root directory, no longer updated) still has the code from V5.4.x, but receives no further updates. New users should use Obsidian / Feishu / Notion / HTML only.
 
 > **V5.5.0 Updates** (2026-04-14):
 > - **Feishu Sync in Userscript** - Full Feishu Bitable API implementation with gmFetch
@@ -184,7 +190,7 @@ For privately deployed or undetected Discourse sites, you can manually add them 
 
 | Action | Result |
 |--------|--------|
-| **Single click** on post link button | Save post to Obsidian/Feishu/Notion/SiYuan Note |
+| **Single click** on post link button | Save post to Obsidian/Feishu/Notion/HTML |
 | **Single click** on comment link button | Save post + that comment (filename: `Title-Floor X.md`) |
 | **Double click** on link button | Copy link to clipboard |
 | **Ctrl+Shift+S** (Mac: **⌘+Shift+S**) | Keyboard shortcut to save post |
@@ -199,7 +205,7 @@ For privately deployed or undetected Discourse sites, you can manually add them 
 |---------|-------------|
 | **Cross-browser** | Supports Chrome, Edge, Firefox, Safari via Tampermonkey/Greasemonkey |
 | **40+ Forums** | Built-in @match rules for popular Discourse sites |
-| **Five Platforms** | Save to Obsidian / Feishu / Notion / Yuque / SiYuan Note / HTML export |
+| **Four Platforms** | Save to Obsidian / Feishu / Notion / HTML export (**Yuque/SiYuan removed from userscript in V5.5.0**) |
 | **Comments** | Comment saving, collapse mode, username hyperlinks |
 | **One-click Install** | [Install page](https://acheng-byte.github.io/discourse-saver/install.html) with one-click copy |
 
@@ -304,7 +310,7 @@ For privately deployed or undetected Discourse sites, you can manually add them 
 1. Visit any **Discourse forum** (LinuxDo, Discourse Meta, etc.) post page
 2. Plugin will **auto-detect** and activate (first visit will show prompt)
 3. Find the **link button** (chain icon) in the bottom right of post/comment
-4. **Single click** → Save to all enabled platforms (Obsidian/Feishu/Notion/Yuque/SiYuan Note)
+4. **Single click** → Save to all enabled platforms (Obsidian/Feishu/Notion/HTML)
 5. **Double click** → Copy link to clipboard
 
 ### File Naming Rules
@@ -351,8 +357,8 @@ Settings page supports Chinese/English toggle, click **中文 / EN** button in t
 | Save to Obsidian | Enable Obsidian save |
 | Save to Feishu Bitable | Enable Feishu sync |
 | Save to Notion Database | Enable Notion sync (V4.0.1) |
-| Save to Yuque | Enable Yuque knowledge base sync (V5.1) |
-| Save to SiYuan Note | Enable SiYuan Note sync (V5.1) |
+| ~~Save to Yuque~~ | ~~Enable Yuque knowledge base sync~~ **Removed from userscript in V5.5.0** (Chrome extension V5.4.x only, no longer updated) |
+| ~~Save to SiYuan Note~~ | ~~Enable SiYuan Note sync~~ **Removed from userscript in V5.5.0** (Chrome extension V5.4.x only, no longer updated) |
 | Export HTML File | Save as standalone HTML file (V4.3.5) |
 
 ### Obsidian Settings
@@ -427,7 +433,7 @@ When "Download images/videos to Vault folder" is checked, saving posts will auto
 
 > **Detailed Configuration Tutorial**: See [NOTION-GUIDE.html](NOTION-GUIDE.html)
 
-### Yuque Settings (V5.1)
+### Yuque Settings (V5.1) — ⚠️ Removed from userscript in V5.5.0
 
 | Option | Description |
 |--------|-------------|
@@ -439,7 +445,7 @@ When "Download images/videos to Vault folder" is checked, saving posts will auto
 1. Get your personal access token from Yuque developer settings
 2. Ensure the knowledge base exists and the token has write access
 
-### SiYuan Note Settings (V5.1)
+### SiYuan Note Settings (V5.1) — ⚠️ Removed from userscript in V5.5.0
 
 | Option | Description |
 |--------|-------------|
@@ -740,9 +746,9 @@ See [NOTION-GUIDE.html](NOTION-GUIDE.html)
 
 ### Q10: Do Notion and Obsidian/Feishu conflict?
 
-**A:** No conflict! All save targets (Obsidian, Feishu, Notion, Yuque, SiYuan Note, HTML Export) are completely independent. You can enable all platforms simultaneously, save to multiple places with one click. Any platform save failure won't affect other platforms.
+**A:** No conflict! All save targets (Obsidian, Feishu, Notion, HTML Export) are completely independent. (Note: Yuque and SiYuan Note were removed from the userscript in V5.5.0. Chrome extension V5.4.x still has the code but is no longer updated.)
 
-### Q11: SiYuan Note save failed?
+### Q11: SiYuan Note save failed? (⚠️ Removed from userscript in V5.5.0 — Chrome extension V5.4.x only)
 
 **A:** Please check in this order:
 1. Is SiYuan Note desktop client running
@@ -753,7 +759,7 @@ See [NOTION-GUIDE.html](NOTION-GUIDE.html)
 
 > See [SiYuan Note Configuration Guide](docs/siyuan-guide.html) for details
 
-### Q12: Can't find the document after saving to SiYuan Note?
+### Q12: Can't find the document after saving to SiYuan Note? (⚠️ Removed from userscript in V5.5.0 — Chrome extension V5.4.x only)
 
 **A:** Documents are saved under `{Notebook}/{Save Path}/{Site Name}/` directory. You can:
 1. Refresh the file tree in the left panel of SiYuan Note
