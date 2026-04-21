@@ -345,6 +345,9 @@ const FEISHU_ERROR_CODES = {
 
 // Notion API 版本
 const NOTION_API_VERSION = '2022-06-28';
+const NOTION_FILE_UPLOAD_API_VERSION = '2026-03-11';
+const NOTION_MAX_UPLOAD_IMAGE_SIZE = 20 * 1024 * 1024; // 20MB
+const NOTION_UPLOAD_REQUEST_DELAY_MS = 350;
 
 // Notion 错误码映射 - 提供友好的中文提示
 const NOTION_ERROR_CODES = {
@@ -1206,6 +1209,523 @@ function resolveNotionConfigFromDatabase(config, database) {
 
   return resolvedConfig;
 }
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getNotionFileExtensionFromMimeType(contentType = '') {
+  const cleanType = contentType.split(';')[0].trim().toLowerCase();
+  const mimeMap = {
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/png': 'png',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+    'image/svg+xml': 'svg',
+    'image/bmp': 'bmp',
+    'image/tiff': 'tiff',
+    'image/x-icon': 'ico',
+    'image/heic': 'heic',
+    'image/heif': 'heif',
+    'image/avif': 'avif'
+  };
+  return mimeMap[cleanType] || '';
+}
+
+function getImageContentTypeFromUrl(imageUrl = '') {
+  const lowerUrl = imageUrl.toLowerCase();
+  if (/\.jpe?g(?:$|[?#])/i.test(lowerUrl)) return 'image/jpeg';
+  if (/\.png(?:$|[?#])/i.test(lowerUrl)) return 'image/png';
+  if (/\.gif(?:$|[?#])/i.test(lowerUrl)) return 'image/gif';
+  if (/\.webp(?:$|[?#])/i.test(lowerUrl)) return 'image/webp';
+  if (/\.svg(?:$|[?#])/i.test(lowerUrl)) return 'image/svg+xml';
+  if (/\.bmp(?:$|[?#])/i.test(lowerUrl)) return 'image/bmp';
+  if (/\.tiff?(?:$|[?#])/i.test(lowerUrl)) return 'image/tiff';
+  if (/\.ico(?:$|[?#])/i.test(lowerUrl)) return 'image/x-icon';
+  if (/\.heic(?:$|[?#])/i.test(lowerUrl)) return 'image/heic';
+  if (/\.heif(?:$|[?#])/i.test(lowerUrl)) return 'image/heif';
+  if (/\.avif(?:$|[?#])/i.test(lowerUrl)) return 'image/avif';
+  return '';
+}
+
+function buildNotionUploadFileName(imageUrl, contentType, index = 0) {
+  let fileName = '';
+  try {
+    const urlObj = new URL(imageUrl);
+    fileName = decodeURIComponent(urlObj.pathname.split('/').pop() || '');
+  } catch (e) {
+    fileName = '';
+  }
+
+  fileName = fileName
+    .replace(/[<>:"/\\|?*]/g, '_')
+    .replace(/[\r\n]+/g, ' ')
+    .trim();
+
+  if (!fileName) {
+    fileName = `notion-image-${index + 1}`;
+  }
+
+  const fallbackExt = getNotionFileExtensionFromMimeType(contentType);
+  if (!/\.[a-z0-9]{2,5}$/i.test(fileName) && fallbackExt) {
+    fileName += `.${fallbackExt}`;
+  }
+
+  if (fileName.length > 180) {
+    const dotIdx = fileName.lastIndexOf('.');
+    if (dotIdx > 0) {
+      const ext = fileName.slice(dotIdx);
+      fileName = fileName.slice(0, 180 - ext.length) + ext;
+    } else {
+      fileName = fileName.slice(0, 180);
+    }
+  }
+
+  return fileName;
+}
+
+function buildNotionUploadError(status, errorData, context) {
+  const apiMessage = errorData?.message || errorData?.error?.message || '';
+  const apiCode = errorData?.code || errorData?.error?.code || '';
+
+  let message = `${context}失败：HTTP ${status}`;
+  if (apiMessage) {
+    message += `\n\n❌ Notion 返回：${apiMessage}`;
+  }
+  if (apiCode) {
+    message += `\n错误码：${apiCode}`;
+  }
+  return message;
+}
+
+function formatNotionImageWarning(imageUrl, reason) {
+  let label = imageUrl;
+  try {
+    const urlObj = new URL(imageUrl);
+    label = decodeURIComponent(urlObj.pathname.split('/').pop() || urlObj.hostname || imageUrl);
+  } catch (e) {
+    // ignore
+  }
+
+  if (label.length > 40) {
+    label = label.slice(0, 37) + '...';
+  }
+
+  return `图片仍使用外链：${label}（${reason}）`;
+}
+
+function normalizeNotionImageUrl(imageUrl, forumOrigin = '') {
+  if (imageUrl?.startsWith('upload://') && forumOrigin) {
+    return forumOrigin.replace(/\/$/, '') + '/uploads/short-url/' + imageUrl.slice(9);
+  }
+  return imageUrl;
+}
+
+function decodeBase64ToUint8Array(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function requestImageViaContentScript(tabId, imageUrl) {
+  if (!tabId) {
+    throw new Error('无法通过页面上下文获取图片');
+  }
+
+  return await new Promise((resolve, reject) => {
+    try {
+      chrome.tabs.sendMessage(tabId, { action: 'fetchImageForNotionUpload', imageUrl }, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+
+        if (!response?.success) {
+          reject(new Error(response?.error || '页面未返回图片数据'));
+          return;
+        }
+
+        resolve(response);
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+async function notionApiRequestWithRetry(url, options, context, apiVersion = NOTION_API_VERSION, expectJson = true) {
+  const maxAttempts = 3;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let response;
+    try {
+      response = await fetch(url, {
+        ...options,
+        headers: {
+          ...(options.headers || {}),
+          'Notion-Version': apiVersion
+        }
+      });
+    } catch (fetchError) {
+      if (attempt === maxAttempts) {
+        throw new Error(`${context}失败：${fetchError.message}`);
+      }
+      await sleep(500 * attempt);
+      continue;
+    }
+
+    if ((response.status === 429 || response.status >= 500) && attempt < maxAttempts) {
+      await sleep(response.status === 429 ? 1000 * attempt : 500 * attempt);
+      continue;
+    }
+
+    if (!response.ok) {
+      let errorData = {};
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        try {
+          const errorText = await response.text();
+          if (errorText) {
+            errorData = { message: errorText };
+          }
+        } catch (e2) {
+          // ignore
+        }
+      }
+      throw new Error(buildNotionUploadError(response.status, errorData, context));
+    }
+
+    if (!expectJson) {
+      return response;
+    }
+
+    try {
+      return await response.json();
+    } catch (e) {
+      return {};
+    }
+  }
+
+  throw new Error(`${context}失败：超过最大重试次数`);
+}
+
+async function fetchImageForNotionUpload(imageUrl, index = 0, pageContext = {}) {
+  const normalizedUrl = normalizeNotionImageUrl(imageUrl, pageContext.forumOrigin);
+  const backgroundFetchOptions = {
+    cache: 'no-store',
+    credentials: 'include',
+    redirect: 'follow',
+    referrer: pageContext.pageUrl || pageContext.forumOrigin || undefined,
+    referrerPolicy: 'strict-origin-when-cross-origin',
+    headers: {
+      'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+    }
+  };
+
+  const normalizeDownloadedBlob = async (blob, responseContentType = '', fileNameOverride = '') => {
+    if (!blob || !blob.size) {
+      throw new Error('图片内容为空');
+    }
+
+    if (blob.size > NOTION_MAX_UPLOAD_IMAGE_SIZE) {
+      const sizeMb = (blob.size / 1024 / 1024).toFixed(1);
+      throw new Error(`图片超过 20MB 限制（${sizeMb}MB）`);
+    }
+
+    let contentType = (responseContentType || blob.type || '').split(';')[0].trim().toLowerCase();
+    if (!contentType || contentType === 'application/octet-stream') {
+      contentType = getImageContentTypeFromUrl(normalizedUrl);
+    }
+
+    if (!contentType || !contentType.startsWith('image/')) {
+      throw new Error(`不是可上传的图片资源（${contentType || 'unknown'}）`);
+    }
+
+    return {
+      blob,
+      contentType,
+      fileName: fileNameOverride || buildNotionUploadFileName(normalizedUrl, contentType, index),
+      size: blob.size
+    };
+  };
+
+  let response;
+  try {
+    response = await fetch(normalizedUrl, backgroundFetchOptions);
+    if (response.ok) {
+      const blob = await response.blob();
+      return await normalizeDownloadedBlob(blob, response.headers.get('content-type') || '');
+    }
+
+    if (response.status !== 401 && response.status !== 403) {
+      throw new Error(`下载图片失败：HTTP ${response.status}`);
+    }
+  } catch (fetchError) {
+    if (!pageContext.tabId) {
+      throw new Error(`下载图片失败：${fetchError.message}`);
+    }
+  }
+
+  if (!pageContext.tabId) {
+    throw new Error(`下载图片失败：HTTP ${response?.status || 'unknown'}`);
+  }
+
+  try {
+    const pageResult = await requestImageViaContentScript(pageContext.tabId, normalizedUrl);
+    const bytes = decodeBase64ToUint8Array(pageResult.base64 || '');
+    const blob = new Blob([bytes], { type: pageResult.contentType || '' });
+    console.log('[Discourse Saver→Notion] 图片下载回退到页面上下文:', normalizedUrl);
+    return await normalizeDownloadedBlob(blob, pageResult.contentType || '', pageResult.fileName || '');
+  } catch (pageError) {
+    const baseError = response?.status ? `HTTP ${response.status}` : '页面回退失败';
+    throw new Error(`下载图片失败：${baseError}；页面回退：${pageError.message}`);
+  }
+}
+
+async function uploadImageToNotion(token, imageUrl, uploadIndex = 0, pageContext = {}) {
+  const imageFile = await fetchImageForNotionUpload(imageUrl, uploadIndex, pageContext);
+
+  const createResult = await notionApiRequestWithRetry(
+    'https://api.notion.com/v1/file_uploads',
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        mode: 'single_part',
+        filename: imageFile.fileName,
+        content_type: imageFile.contentType
+      })
+    },
+    '创建 Notion 图片上传',
+    NOTION_FILE_UPLOAD_API_VERSION
+  );
+
+  const fileUploadId = createResult?.id;
+  if (!fileUploadId) {
+    throw new Error('Notion 未返回 file_upload ID');
+  }
+
+  await sleep(NOTION_UPLOAD_REQUEST_DELAY_MS);
+
+  const formData = new FormData();
+  formData.append('file', imageFile.blob, imageFile.fileName);
+
+  await notionApiRequestWithRetry(
+    `https://api.notion.com/v1/file_uploads/${fileUploadId}/send`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      body: formData
+    },
+    `上传图片到 Notion：${imageFile.fileName}`,
+    NOTION_FILE_UPLOAD_API_VERSION,
+    false
+  );
+
+  // single_part 上传在 send 成功后就已经是 uploaded 状态
+  // complete API 仅用于 multi_part 上传
+  await sleep(NOTION_UPLOAD_REQUEST_DELAY_MS);
+
+  return {
+    id: fileUploadId,
+    fileName: imageFile.fileName,
+    contentType: imageFile.contentType,
+    size: imageFile.size
+  };
+}
+
+async function convertNotionImagesToFileUploads(token, pageData, pageContext = {}) {
+  const uploadCache = new Map();
+  const warnings = [];
+  const warnedUrls = new Set();
+  const fallbackUrls = new Set();
+  let uploadIndex = 0;
+  let uploadedCount = 0;
+
+  async function processBlocks(blocks) {
+    if (!Array.isArray(blocks)) return;
+
+    for (const block of blocks) {
+      if (!block || typeof block !== 'object') continue;
+
+      if (block.type === 'image' && block.image?.type === 'external' && block.image.external?.url) {
+        const imageUrl = block.image.external.url;
+        let uploadResult = uploadCache.get(imageUrl);
+
+        if (!uploadResult) {
+          try {
+            const uploaded = await uploadImageToNotion(token, imageUrl, uploadIndex++, pageContext);
+            uploadResult = { success: true, ...uploaded };
+          } catch (error) {
+            uploadResult = { success: false, error: error.message };
+          }
+          uploadCache.set(imageUrl, uploadResult);
+        }
+
+        if (uploadResult.success && uploadResult.id) {
+          const nextImage = {
+            type: 'file_upload',
+            file_upload: { id: uploadResult.id }
+          };
+          if (Array.isArray(block.image.caption) && block.image.caption.length > 0) {
+            nextImage.caption = block.image.caption;
+          }
+          block.image = nextImage;
+          uploadedCount++;
+        } else {
+          fallbackUrls.add(imageUrl);
+          if (!warnedUrls.has(imageUrl) && warnings.length < 5) {
+            warnings.push(formatNotionImageWarning(imageUrl, uploadResult.error || '上传失败'));
+            warnedUrls.add(imageUrl);
+          }
+        }
+      }
+
+      const childBlocks = block[block.type]?.children;
+      if (Array.isArray(childBlocks) && childBlocks.length > 0) {
+        await processBlocks(childBlocks);
+      }
+    }
+  }
+
+  await processBlocks(pageData.children || []);
+
+  const fallbackCount = fallbackUrls.size;
+  const hiddenWarningCount = Math.max(0, fallbackCount - warnedUrls.size);
+  if (hiddenWarningCount > 0) {
+    warnings.push(`另有 ${hiddenWarningCount} 张图片仍保留外链`);
+  }
+
+  return {
+    uploadedCount,
+    fallbackCount,
+    warnings,
+    usesFileUpload: uploadedCount > 0
+  };
+}
+
+function compactNotionWarningMessage(message, maxLength = 180) {
+  if (!message) return '未知错误';
+  const compact = String(message)
+    .replace(/\r?\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return compact.length > maxLength ? compact.slice(0, maxLength - 1) + '…' : compact;
+}
+
+async function appendNotionChildrenOnce(token, pageId, children, notionWriteVersion) {
+  const maxAttempts = 3;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await fetch(`https://api.notion.com/v1/blocks/${pageId}/children`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Notion-Version': notionWriteVersion,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ children })
+      });
+
+      if (response.ok) {
+        return { ok: true };
+      }
+
+      let errorData = {};
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        // ignore
+      }
+
+      const errorMessage = buildNotionUploadError(response.status, errorData, '追加块到 Notion');
+      if ((response.status === 429 || response.status >= 500) && attempt < maxAttempts) {
+        await sleep(response.status === 429 ? 1000 * attempt : 500 * attempt);
+        continue;
+      }
+
+      return {
+        ok: false,
+        status: response.status,
+        errorMessage
+      };
+    } catch (error) {
+      if (attempt < maxAttempts) {
+        await sleep(500 * attempt);
+        continue;
+      }
+
+      return {
+        ok: false,
+        status: 0,
+        errorMessage: `追加块到 Notion失败：${error.message}`
+      };
+    }
+  }
+
+  return {
+    ok: false,
+    status: 0,
+    errorMessage: '追加块到 Notion失败：超过最大重试次数'
+  };
+}
+
+async function appendNotionChildrenWithFallback(token, pageId, children, notionWriteVersion, contentWarnings, label = '当前批次') {
+  if (!children || children.length === 0) {
+    return { appended: 0, skipped: 0 };
+  }
+
+  const appendResult = await appendNotionChildrenOnce(token, pageId, children, notionWriteVersion);
+  if (appendResult.ok) {
+    return { appended: children.length, skipped: 0 };
+  }
+
+  if (children.length === 1) {
+    const blockType = children[0]?.type || 'unknown';
+    const failMsg = `${label}中的 ${blockType} 块追加失败：${compactNotionWarningMessage(appendResult.errorMessage)}`;
+    console.error(`[Discourse Saver→Notion] ${failMsg}`);
+    contentWarnings.push(failMsg);
+    return { appended: 0, skipped: 1 };
+  }
+
+  console.warn(`[Discourse Saver→Notion] ${label} 追加失败，拆分重试 (${children.length}块)`);
+  const mid = Math.floor(children.length / 2);
+  const left = children.slice(0, mid);
+  const right = children.slice(mid);
+
+  const leftResult = await appendNotionChildrenWithFallback(
+    token,
+    pageId,
+    left,
+    notionWriteVersion,
+    contentWarnings,
+    `${label}-A`
+  );
+  const rightResult = await appendNotionChildrenWithFallback(
+    token,
+    pageId,
+    right,
+    notionWriteVersion,
+    contentWarnings,
+    `${label}-B`
+  );
+
+  return {
+    appended: leftResult.appended + rightResult.appended,
+    skipped: leftResult.skipped + rightResult.skipped
+  };
+}
 // V4.2.3: 规范化 URL（移除末尾斜杠、统一协议等）
 function normalizeUrl(url) {
   if (!url) return url;
@@ -1503,6 +2023,107 @@ function preprocessMarkdownText(text) {
   return processed;
 }
 
+function extractFencedCodeBlocks(content) {
+  const codeBlocks = [];
+  const outputLines = [];
+  const lines = content.split('\n');
+
+  let inCodeBlock = false;
+  let fenceMarker = '';
+  let openingLine = '';
+  let infoString = '';
+  let buffer = [];
+
+  const getLanguageFromInfoString = (info) => {
+    if (!info) return 'plain text';
+    const firstToken = info.trim().split(/\s+/)[0];
+    return firstToken || 'plain text';
+  };
+
+  for (const line of lines) {
+    if (!inCodeBlock) {
+      const openMatch = line.match(/^\s*(`{3,}|~{3,})([^`]*)$/);
+      if (openMatch) {
+        inCodeBlock = true;
+        fenceMarker = openMatch[1];
+        openingLine = line;
+        infoString = (openMatch[2] || '').trim();
+        buffer = [];
+      } else {
+        outputLines.push(line);
+      }
+      continue;
+    }
+
+    const closeRegex = new RegExp(`^\\s*${fenceMarker.replace(/[-/\\\\^$*+?.()|[\\]{}]/g, '\\$&')}\\s*$`);
+    if (closeRegex.test(line)) {
+      const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`;
+      codeBlocks.push({
+        language: getLanguageFromInfoString(infoString),
+        code: buffer.join('\n').trimEnd()
+      });
+      outputLines.push(placeholder);
+      inCodeBlock = false;
+      fenceMarker = '';
+      openingLine = '';
+      infoString = '';
+      buffer = [];
+    } else {
+      buffer.push(line);
+    }
+  }
+
+  // 未闭合的围栏代码块，按原文保留，避免污染后续结构
+  if (inCodeBlock) {
+    outputLines.push(openingLine);
+    outputLines.push(...buffer);
+  }
+
+  return {
+    content: outputLines.join('\n'),
+    codeBlocks
+  };
+}
+
+function sanitizeNotionLinkUrl(rawUrl, siteOrigin = '') {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+
+  let candidate = rawUrl.trim()
+    .replace(/^<+|>+$/g, '')
+    .replace(/&amp;/g, '&');
+
+  if (!candidate) return null;
+
+  const trailingChars = '.,;!?)]}）】';
+  const tryResolve = (value) => {
+    try {
+      const resolved = (siteOrigin && !/^https?:\/\//i.test(value))
+        ? new URL(value, siteOrigin)
+        : new URL(value);
+
+      if (!['http:', 'https:'].includes(resolved.protocol)) {
+        return null;
+      }
+      return resolved.toString()
+        .replace(/\(/g, '%28')
+        .replace(/\)/g, '%29')
+        .replace(/\[/g, '%5B')
+        .replace(/\]/g, '%5D')
+        .replace(/ /g, '%20');
+    } catch (e) {
+      return null;
+    }
+  };
+
+  let resolved = tryResolve(candidate);
+  while (!resolved && candidate && trailingChars.includes(candidate.slice(-1))) {
+    candidate = candidate.slice(0, -1).trim();
+    resolved = tryResolve(candidate);
+  }
+
+  return resolved;
+}
+
 // V4.2.3: 解析 Markdown 格式为 Notion rich_text 格式
 // 支持链接 [text](url)、裸URL、加粗 **text**、斜体 *text*、行内代码 `code`
 // V4.3.9: 增加裸URL支持 + 相对路径URL转换（需传入siteOrigin）
@@ -1531,18 +2152,9 @@ function parseMarkdownToRichText(text, siteOrigin = '') {
 
     if (match[1] !== undefined && match[2] !== undefined) {
       // 链接: [text](url) - 支持完整URL和相对路径
-      let linkUrl = match[2];
-      // V4.3.9: 处理相对路径URL
-      if (siteOrigin && !linkUrl.startsWith('http://') && !linkUrl.startsWith('https://')) {
-        // 相对路径，需要拼接站点origin
-        if (linkUrl.startsWith('/')) {
-          linkUrl = siteOrigin + linkUrl;
-        } else {
-          linkUrl = siteOrigin + '/' + linkUrl;
-        }
-      }
+      const linkUrl = sanitizeNotionLinkUrl(match[2], siteOrigin);
       // 只有有效的URL才添加链接
-      if (linkUrl.startsWith('http://') || linkUrl.startsWith('https://')) {
+      if (linkUrl) {
         richTextArray.push({
           type: 'text',
           text: {
@@ -1590,8 +2202,8 @@ function parseMarkdownToRichText(text, siteOrigin = '') {
     } else if (match[6] !== undefined) {
       // V4.3.9: 裸URL: https://xxx
       try {
-        // 清理URL末尾可能的标点符号
-        let cleanUrl = match[6].replace(/[,.:;!?）)]+$/, '');
+        const cleanUrl = sanitizeNotionLinkUrl(match[6], siteOrigin);
+        if (!cleanUrl) throw new Error('invalid url');
         // 提取域名作为显示文本
         const displayText = cleanUrl.replace(/^https?:\/\//, '').split('/')[0];
         richTextArray.push({
@@ -1820,17 +2432,10 @@ function buildNotionPageData(postData, config) {
     let blockCount = 0;
     const maxBlocks = 500; // V4.2.5: 增加到500块，支持更长的帖子。Notion API每次只能发100块，但saveToNotion已有分页处理
 
-    // V4.2.3: 先提取并处理围栏代码块 ```language ... ```
-    // 使用占位符替换代码块，稍后再恢复
-    const codeBlocks = [];
-    preprocessedContent = preprocessedContent.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
-      const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`;
-      codeBlocks.push({
-        language: lang || 'plain text',
-        code: code.trim()
-      });
-      return placeholder;
-    });
+    // V4.2.3: 先提取并处理围栏代码块，避免内部 markdown 被错误解析
+    const extractedCodeBlocks = extractFencedCodeBlocks(preprocessedContent);
+    const codeBlocks = extractedCodeBlocks.codeBlocks;
+    preprocessedContent = extractedCodeBlocks.content;
 
     // V4.2.6: 处理折叠内容 <details><summary>...</summary>...</details> 和 [details="..."]...[/details]
     const toggleBlocks = [];
@@ -2391,7 +2996,7 @@ function buildNotionPageData(postData, config) {
 // 保存到 Notion
 // V4.0.6: 支持分批创建children（Notion API限制每次最多100个块）
 // V4.2.3: 支持更新现有记录（通过URL查找，避免重复）
-async function saveToNotion(postData, config) {
+async function saveToNotion(postData, config, pageContext = {}) {
   console.log('[Discourse Saver→Notion] 开始保存...');
   console.log('[Discourse Saver→Notion] 标题:', postData.title);
 
@@ -2408,7 +3013,7 @@ async function saveToNotion(postData, config) {
   const database = await getNotionDatabaseInfo(token, databaseId, '读取 Database 配置');
   const mappingErrors = validateNotionPropertyMappingsForSave(config, database);
   if (mappingErrors.length > 0) {
-    throw new Error('Database ???????\n' + mappingErrors.join('\n'));
+    throw new Error('Database 属性配置错误：\n' + mappingErrors.join('\n'));
   }
 
   const runtimeConfig = resolveNotionConfigFromDatabase(config, database);
@@ -2418,6 +3023,17 @@ async function saveToNotion(postData, config) {
 
   // Build page data
   const pageData = buildNotionPageData(postData, runtimeConfig);
+
+  // 优先把图片上传到 Notion，避免外链图片失效
+  const imageUploadResult = await convertNotionImagesToFileUploads(token, pageData, pageContext);
+  const notionWriteVersion = imageUploadResult.usesFileUpload ? NOTION_FILE_UPLOAD_API_VERSION : NOTION_API_VERSION;
+
+  if (imageUploadResult.uploadedCount > 0) {
+    console.log(`[Discourse Saver→Notion] 已上传 ${imageUploadResult.uploadedCount} 张图片到 Notion 文件存储`);
+  }
+  if (imageUploadResult.fallbackCount > 0) {
+    console.warn(`[Discourse Saver→Notion] 有 ${imageUploadResult.fallbackCount} 张图片上传失败，回退为外链`);
+  }
 
   const urlPropName = config.notionPropUrl || '链接';
   const existingPage = await searchNotionRecord(token, databaseId, postData.url, urlPropName);
@@ -2447,7 +3063,7 @@ async function saveToNotion(postData, config) {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
-        'Notion-Version': NOTION_API_VERSION,
+        'Notion-Version': notionWriteVersion,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
@@ -2476,7 +3092,7 @@ async function saveToNotion(postData, config) {
   console.log('[Discourse Saver→Notion] 页面创建成功，ID:', pageId);
 
   // V5.3.1: 收集内容追加警告
-  const contentWarnings = [];
+  const contentWarnings = [...imageUploadResult.warnings];
 
   // 2. 如果有剩余children，分批追加
   if (remainingChildren.length > 0) {
@@ -2488,21 +3104,19 @@ async function saveToNotion(postData, config) {
       const batchNum = Math.floor(i / NOTION_CHILDREN_LIMIT) + 2;
 
       try {
-        const appendResponse = await fetch(`https://api.notion.com/v1/blocks/${pageId}/children`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Notion-Version': NOTION_API_VERSION,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ children: batch })
-        });
+        const appendResult = await appendNotionChildrenWithFallback(
+          token,
+          pageId,
+          batch,
+          notionWriteVersion,
+          contentWarnings,
+          `批次${batchNum}/${totalBatches}`
+        );
 
-        if (!appendResponse.ok) {
-          const failMsg = `批次${batchNum}/${totalBatches}追加失败(HTTP ${appendResponse.status})`;
-          console.error(`[Discourse Saver→Notion] ${failMsg}`);
+        if (appendResult.skipped > 0) {
+          const failMsg = `批次${batchNum}/${totalBatches}部分追加失败（已跳过 ${appendResult.skipped} 个块）`;
+          console.warn(`[Discourse Saver→Notion] ${failMsg}`);
           contentWarnings.push(failMsg);
-          // 继续处理其他批次，不中断
         } else {
           console.log(`[Discourse Saver→Notion] 批次${batchNum}/${totalBatches}追加成功 (${batch.length}个块)`);
         }
@@ -2534,6 +3148,10 @@ async function saveToNotion(postData, config) {
       pageId: result.id,
       url: result.url,
       oldPageArchived: archived,
+      imageUploadStats: {
+        uploadedCount: imageUploadResult.uploadedCount,
+        fallbackCount: imageUploadResult.fallbackCount
+      },
       contentWarnings  // V5.3.1: 传回内容追加警告
     };
   }
@@ -2545,6 +3163,10 @@ async function saveToNotion(postData, config) {
     action: 'created',
     pageId: result.id,
     url: result.url,
+    imageUploadStats: {
+      uploadedCount: imageUploadResult.uploadedCount,
+      fallbackCount: imageUploadResult.fallbackCount
+    },
     contentWarnings  // V5.3.1: 传回内容追加警告
   };
 }
@@ -3004,7 +3626,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     (async () => {
       try {
         const { config, postData } = request;
-        const result = await saveToNotion(postData, config);
+        const result = await saveToNotion(postData, config, {
+          tabId: sender.tab?.id,
+          pageUrl: postData?.pageUrl || '',
+          forumOrigin: postData?.forumOrigin || ''
+        });
         sendResponse(result);
       } catch (error) {
         console.error('[Discourse Saver→Notion] 保存失败:', error);

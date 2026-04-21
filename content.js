@@ -169,6 +169,111 @@
     });
   }
 
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = typeof reader.result === 'string' ? reader.result : '';
+        const commaIndex = result.indexOf(',');
+        resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : result);
+      };
+      reader.onerror = () => reject(new Error('FileReader 读取失败'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function buildNotionImageFileName(imageUrl, contentType = '') {
+    let fileName = '';
+    try {
+      const urlObj = new URL(imageUrl, window.location.href);
+      fileName = decodeURIComponent(urlObj.pathname.split('/').pop() || '');
+    } catch (e) {
+      fileName = '';
+    }
+
+    fileName = fileName
+      .replace(/[<>:"/\\|?*]/g, '_')
+      .replace(/[\r\n]+/g, ' ')
+      .trim();
+
+    if (!fileName) {
+      fileName = 'notion-image';
+    }
+
+    if (!/\.[a-z0-9]{2,5}$/i.test(fileName)) {
+      const extMap = {
+        'image/jpeg': 'jpg',
+        'image/png': 'png',
+        'image/gif': 'gif',
+        'image/webp': 'webp',
+        'image/svg+xml': 'svg',
+        'image/avif': 'avif'
+      };
+      const ext = extMap[(contentType || '').toLowerCase()];
+      if (ext) fileName += `.${ext}`;
+    }
+
+    return fileName;
+  }
+
+  async function fetchImageForNotionUploadFromPage(imageUrl) {
+    const normalizedUrl = imageUrl.startsWith('upload://')
+      ? window.location.origin + '/uploads/short-url/' + imageUrl.slice(9)
+      : imageUrl;
+
+    let response;
+    try {
+      response = await fetch(normalizedUrl, {
+        // 关键：用 same-origin，让 short-url 请求带上论坛 cookie，
+        // 但跳转到 CDN 后不再要求 cross-origin 响应返回 ACA-Credentials。
+        credentials: 'same-origin',
+        cache: 'no-store',
+        redirect: 'follow',
+        referrer: window.location.href,
+        referrerPolicy: 'strict-origin-when-cross-origin',
+        headers: {
+          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+        }
+      });
+    } catch (fetchError) {
+      throw new Error(`页面抓取失败：${fetchError.message}`);
+    }
+
+    if (!response.ok) {
+      throw new Error(`页面抓取失败：HTTP ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    if (!blob || !blob.size) {
+      throw new Error('页面抓取到的图片为空');
+    }
+
+    const contentType = (response.headers.get('content-type') || blob.type || '').split(';')[0].trim().toLowerCase();
+    const base64 = await blobToBase64(blob);
+
+    return {
+      success: true,
+      base64,
+      contentType,
+      fileName: buildNotionImageFileName(normalizedUrl, contentType)
+    };
+  }
+
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'fetchImageForNotionUpload') {
+      (async () => {
+        try {
+          const result = await fetchImageForNotionUploadFromPage(request.imageUrl || '');
+          sendResponse(result);
+        } catch (error) {
+          sendResponse({ success: false, error: error.message });
+        }
+      })();
+      return true;
+    }
+    return false;
+  });
+
   // 发送运行日志到 background（静默失败，不影响主流程）
   function rlog(level, message) {
     try {
@@ -908,12 +1013,59 @@
     const uploadTokens = rawMarkdown.match(/upload:\/\/[^\s\)\"'\]]+/g);
     if (!uploadTokens || uploadTokens.length === 0) return rawMarkdown;
 
-    // 从 cooked HTML 提取所有 CDN URL（img src、a href、audio/source/video src）
     const imgUrls = [];
-    const allUrlRegex = /(?:src|href)="(https?:\/\/[^"]+\/uploads\/[^"]+)"/g;
+    const tokenToUrl = new Map();
+
+    const pushUrl = (url) => {
+      if (!url) return;
+      try {
+        const absoluteUrl = new URL(url, window.location.origin).toString();
+        if (!imgUrls.includes(absoluteUrl)) imgUrls.push(absoluteUrl);
+        return absoluteUrl;
+      } catch (e) {
+        return null;
+      }
+    };
+
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(cookedHtml, 'text/html');
+
+      doc.querySelectorAll('img, a, source, audio, video').forEach(el => {
+        const url = el.getAttribute('src') || el.getAttribute('href') || '';
+        pushUrl(url);
+      });
+
+      // Discourse 常见结构：img[data-base62-sha1] + 外层 a.lightbox[href=原图]
+      doc.querySelectorAll('[data-base62-sha1]').forEach(el => {
+        const tokenHash = (el.getAttribute('data-base62-sha1') || '').trim();
+        if (!tokenHash) return;
+
+        let bestUrl = '';
+        if (el.tagName === 'IMG') {
+          bestUrl =
+            el.closest('a.lightbox[href]')?.getAttribute('href') ||
+            el.closest('a[href]')?.getAttribute('href') ||
+            el.getAttribute('src') ||
+            '';
+        } else {
+          bestUrl = el.getAttribute('href') || el.getAttribute('src') || '';
+        }
+
+        const absoluteUrl = pushUrl(bestUrl);
+        if (absoluteUrl) {
+          tokenToUrl.set(tokenHash, absoluteUrl);
+        }
+      });
+    } catch (e) {
+      console.warn('[Discourse Saver] 解析 cooked HTML 的上传映射失败:', e);
+    }
+
+    // 兼容旧逻辑：正则兜底提取所有绝对 URL（不限 /uploads/）
+    const allUrlRegex = /(?:src|href)="(https?:\/\/[^"]+)"/g;
     let m;
     while ((m = allUrlRegex.exec(cookedHtml)) !== null) {
-      if (!imgUrls.includes(m[1])) imgUrls.push(m[1]);
+      pushUrl(m[1]);
     }
 
     let resolved = rawMarkdown;
@@ -922,8 +1074,10 @@
       const tokenBody = token.replace('upload://', '');
       const hashPart = tokenBody.split('.')[0];
 
-      // 优先：在 URL 中找到包含此 hash 的完整 URL
-      const matchedUrl = imgUrls.find(u => u.includes(hashPart));
+      // 优先：使用 data-base62-sha1 → 原图 URL 的精确映射
+      const mappedUrl = tokenToUrl.get(hashPart);
+      // 其次：在 URL 中找到包含此 hash 的完整 URL
+      const matchedUrl = mappedUrl || imgUrls.find(u => u.includes(hashPart));
       // V5.5.3: fallback → /uploads/short-url/ 确保 upload:// 一定被替换
       const replacement = matchedUrl ||
         (idx < imgUrls.length ? imgUrls[idx] : null) ||
@@ -2667,6 +2821,8 @@ tags: [${tagsStr}]
           postData: {
             title: notionTitle,
             url: notionUrl,
+            pageUrl: window.location.href,
+            forumOrigin: window.location.origin,
             author: author,
             content: originalMarkdown,
             category: category || '',
@@ -2806,11 +2962,22 @@ tags: [${tagsStr}]
                 if (response && response.success) {
                   const actionText = response.action === 'updated' ? '已更新' : '已保存';
                   const warnings = response.contentWarnings || [];
+                  const imageUploadStats = response.imageUploadStats || {};
+                  const imageFallbackWarnings = warnings.filter(w =>
+                    w.includes('图片仍使用外链') || w.includes('图片保留外链')
+                  );
+                  const nonImageWarnings = warnings.filter(w =>
+                    !w.includes('图片仍使用外链') && !w.includes('图片保留外链')
+                  );
                   const archiveWarning = (response.action === 'updated' && response.oldPageArchived === false) ? '旧页面归档失败' : '';
-                  const allWarnings = warnings.concat(archiveWarning ? [archiveWarning] : []);
+                  const allWarnings = nonImageWarnings.concat(archiveWarning ? [archiveWarning] : []);
                   if (allWarnings.length > 0) {
                     showNotification(`Notion ${actionText}成功，但: ${allWarnings.join('; ')}`, 'warning');
                     rlog('WARN', 'Notion ' + actionText + '成功但有警告: ' + allWarnings.join('; '));
+                  } else if (imageFallbackWarnings.length > 0) {
+                    const fallbackCount = imageUploadStats.fallbackCount || imageFallbackWarnings.length;
+                    showNotification(`Notion ${actionText}成功（${fallbackCount} 张图片保留外链）`, 'success');
+                    rlog('INFO', 'Notion ' + actionText + '成功，部分图片保留外链: ' + imageFallbackWarnings.join('; '));
                   } else {
                     showNotification(`Notion ${actionText}成功`, 'success');
                   }

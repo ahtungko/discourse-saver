@@ -4,9 +4,18 @@
 (function() {
   'use strict';
 
+  function isExtensionContextAvailable() {
+    try {
+      return !!(chrome && chrome.runtime && chrome.runtime.id);
+    } catch (_) {
+      return false;
+    }
+  }
+
   // 运行日志辅助（发送到 background.js 日志管理器）
   function rlog(level, message) {
     try {
+      if (!isExtensionContextAvailable()) return;
       chrome.runtime.sendMessage({ action: 'log', level, source: 'detector', message });
     } catch (_) { /* 扩展上下文失效时忽略 */ }
   }
@@ -59,27 +68,54 @@
   // 检查当前站点是否在用户的自定义站点列表中
   async function isInCustomSiteList() {
     return new Promise((resolve) => {
-      chrome.storage.sync.get({ customSites: [] }, (config) => {
-        const currentHost = window.location.hostname;
-        const isCustomSite = config.customSites.some(site => {
-          try {
-            const siteHost = new URL(site.startsWith('http') ? site : 'https://' + site).hostname;
-            return currentHost === siteHost || currentHost.endsWith('.' + siteHost);
-          } catch {
-            return currentHost.includes(site);
+      try {
+        if (!isExtensionContextAvailable()) {
+          resolve(false);
+          return;
+        }
+
+        chrome.storage.sync.get({ customSites: [] }, (config) => {
+          if (chrome.runtime?.lastError) {
+            resolve(false);
+            return;
           }
+
+          const currentHost = window.location.hostname;
+          const isCustomSite = config.customSites.some(site => {
+            try {
+              const siteHost = new URL(site.startsWith('http') ? site : 'https://' + site).hostname;
+              return currentHost === siteHost || currentHost.endsWith('.' + siteHost);
+            } catch {
+              return currentHost.includes(site);
+            }
+          });
+          resolve(isCustomSite);
         });
-        resolve(isCustomSite);
-      });
+      } catch (_) {
+        resolve(false);
+      }
     });
   }
 
   // 检查插件是否启用
   async function isPluginEnabled() {
     return new Promise((resolve) => {
-      chrome.storage.sync.get({ pluginEnabled: true }, (config) => {
-        resolve(config.pluginEnabled);
-      });
+      try {
+        if (!isExtensionContextAvailable()) {
+          resolve(false);
+          return;
+        }
+
+        chrome.storage.sync.get({ pluginEnabled: true }, (config) => {
+          if (chrome.runtime?.lastError) {
+            resolve(false);
+            return;
+          }
+          resolve(config.pluginEnabled);
+        });
+      } catch (_) {
+        resolve(false);
+      }
     });
   }
 
@@ -89,22 +125,28 @@
     rlog('INFO', '请求注入主脚本: ' + window.location.href.substring(0, 80));
 
     // 通知 background script 注入主脚本
-    chrome.runtime.sendMessage({
-      action: 'injectContentScript',
-      tabUrl: window.location.href
-    }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.error('[Discourse Saver] 加载主脚本失败:', chrome.runtime.lastError);
-        rlog('ERROR', '注入请求失败: ' + chrome.runtime.lastError.message);
-        return;
-      }
-      if (response && response.success) {
-        console.log('[Discourse Saver] 主脚本加载成功');
-        rlog('INFO', '主脚本注入成功');
-      } else {
-        rlog('WARN', '主脚本注入响应异常: ' + JSON.stringify(response));
-      }
-    });
+    try {
+      if (!isExtensionContextAvailable()) return;
+
+      chrome.runtime.sendMessage({
+        action: 'injectContentScript',
+        tabUrl: window.location.href
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('[Discourse Saver] 加载主脚本失败:', chrome.runtime.lastError);
+          rlog('ERROR', '注入请求失败: ' + chrome.runtime.lastError.message);
+          return;
+        }
+        if (response && response.success) {
+          console.log('[Discourse Saver] 主脚本加载成功');
+          rlog('INFO', '主脚本注入成功');
+        } else {
+          rlog('WARN', '主脚本注入响应异常: ' + JSON.stringify(response));
+        }
+      });
+    } catch (_) {
+      // 扩展上下文失效时静默忽略
+    }
   }
 
   // 防止同一页面重复注入
@@ -112,6 +154,8 @@
 
   // 主检测逻辑
   async function detect() {
+    if (!isExtensionContextAvailable()) return;
+
     // 检查插件是否启用
     const enabled = await isPluginEnabled();
     if (!enabled) {
