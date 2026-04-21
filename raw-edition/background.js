@@ -1119,7 +1119,93 @@ function formatNotionDatabaseId(id) {
   return id.replace(/-/g, '').trim();
 }
 
-// V4.2.3: 搜索 Notion 现有记录（通过 URL 查找）
+
+// Fetch Notion database schema
+async function getNotionDatabaseInfo(token, databaseId, context = '读取 Database 配置') {
+  let response;
+  try {
+    response = await fetch(`https://api.notion.com/v1/databases/${databaseId}`, {
+      method: 'GET',
+      cache: 'no-store',  // V5.3.1
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Notion-Version': NOTION_API_VERSION
+      }
+    });
+  } catch (fetchError) {
+    throw new Error(`网络连接失败：${fetchError.message}`);
+  }
+
+  if (!response.ok) {
+    let errorData = {};
+    try {
+      errorData = await response.json();
+    } catch (e) {
+      // ignore
+    }
+    throw new Error(parseNotionError(response.status, errorData, context));
+  }
+
+  return await response.json();
+}
+
+// Shared Notion property mapping definitions
+function getNotionPropertyMappings() {
+  return [
+    { configKey: 'notionPropTitle', label: '标题', required: true, expectedType: 'title' },
+    { configKey: 'notionPropUrl', label: '链接', required: true, expectedType: 'url' },
+    { configKey: 'notionPropAuthor', label: '作者', required: false, expectedType: 'rich_text' },
+    { configKey: 'notionPropCategory', label: '分类', required: false, expectedType: ['rich_text', 'select', 'multi_select'] },
+    { configKey: 'notionPropTags', label: '标签', required: false, expectedType: 'multi_select' },
+    { configKey: 'notionPropSavedDate', label: '保存日期', required: false, expectedType: 'date' },
+    { configKey: 'notionPropCommentCount', label: '评论数', required: false, expectedType: 'number' }
+  ];
+}
+
+// Validate mappings before save to avoid opaque Notion API errors
+function validateNotionPropertyMappingsForSave(config, database) {
+  const errors = [];
+
+  for (const mapping of getNotionPropertyMappings()) {
+    const configValue = config[mapping.configKey];
+    if (!configValue || !configValue.trim()) {
+      if (mapping.required) {
+        errors.push(`❌ ${mapping.label}：未配置属性名`);
+      }
+      continue;
+    }
+
+    const propName = configValue.trim();
+    const propInfo = database.properties?.[propName];
+
+    if (!propInfo) {
+      errors.push(`❌ ${mapping.label}「${propName}」：Database 中不存在此属性`);
+      continue;
+    }
+
+    const actualType = propInfo.type;
+    const expectedTypes = Array.isArray(mapping.expectedType) ? mapping.expectedType : [mapping.expectedType];
+
+    if (!expectedTypes.includes(actualType)) {
+      errors.push(`❌ ${mapping.label}「${propName}」：类型错误，当前是 ${actualType}，应为 ${expectedTypes.join(' 或 ')}`);
+    }
+  }
+
+  return errors;
+}
+
+// Infer runtime property types from live database schema
+function resolveNotionConfigFromDatabase(config, database) {
+  const resolvedConfig = { ...config };
+  const categoryPropName = resolvedConfig.notionPropCategory?.trim();
+  const categoryType = categoryPropName ? database.properties?.[categoryPropName]?.type : null;
+
+  if (['rich_text', 'select', 'multi_select'].includes(categoryType)) {
+    resolvedConfig.notionCategoryType = categoryType;
+  }
+
+  return resolvedConfig;
+}
 // V4.2.3: 规范化 URL（移除末尾斜杠、统一协议等）
 function normalizeUrl(url) {
   if (!url) return url;
@@ -2318,10 +2404,21 @@ async function saveToNotion(postData, config) {
   const token = config.notionToken.trim();
   const databaseId = formatNotionDatabaseId(config.notionDatabaseId);
 
-  // 构建页面数据
-  const pageData = buildNotionPageData(postData, config);
+  // Fetch schema first so category follows the real property type
+  const database = await getNotionDatabaseInfo(token, databaseId, '读取 Database 配置');
+  const mappingErrors = validateNotionPropertyMappingsForSave(config, database);
+  if (mappingErrors.length > 0) {
+    throw new Error('Database ???????\n' + mappingErrors.join('\n'));
+  }
 
-  // V4.2.5: 搜索现有记录（通过URL查找）
+  const runtimeConfig = resolveNotionConfigFromDatabase(config, database);
+  if (runtimeConfig.notionPropCategory) {
+    console.log('[Discourse Saver->Notion] Category property type:', runtimeConfig.notionCategoryType || 'unknown');
+  }
+
+  // Build page data
+  const pageData = buildNotionPageData(postData, runtimeConfig);
+
   const urlPropName = config.notionPropUrl || '链接';
   const existingPage = await searchNotionRecord(token, databaseId, postData.url, urlPropName);
 
@@ -2468,50 +2565,22 @@ async function testNotionConnection(config) {
   const token = config.notionToken.trim();
   const databaseId = formatNotionDatabaseId(config.notionDatabaseId);
 
-  // 查询 Database 信息
-  let response;
+  // Fetch Database info
+  let database;
   try {
-    response = await fetch(`https://api.notion.com/v1/databases/${databaseId}`, {
-      method: 'GET',
-      cache: 'no-store',  // V5.3.1
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Notion-Version': NOTION_API_VERSION
-      }
-    });
+    database = await getNotionDatabaseInfo(token, databaseId, '连接 Database');
   } catch (fetchError) {
     return {
       success: false,
-      error: `网络连接失败：${fetchError.message}`
+      error: fetchError.message
     };
   }
 
-  if (!response.ok) {
-    let errorData = {};
-    try {
-      errorData = await response.json();
-    } catch (e) {
-      // 忽略
-    }
-    return {
-      success: false,
-      error: parseNotionError(response.status, errorData, '连接 Database')
-    };
-  }
-
-  const database = await response.json();
   const dbTitle = database.title?.[0]?.plain_text || '未命名 Database';
   const dbProperties = Object.keys(database.properties);
 
   // V4.0.2: 严格验证属性映射（包括类型检查）
-  const propMappings = [
-    { configKey: 'notionPropTitle', label: '标题', required: true, expectedType: 'title' },
-    { configKey: 'notionPropUrl', label: '链接', required: true, expectedType: 'url' },
-    { configKey: 'notionPropAuthor', label: '作者', required: false, expectedType: 'rich_text' },
-    { configKey: 'notionPropCategory', label: '分类', required: false, expectedType: ['rich_text', 'select', 'multi_select'] },
-    { configKey: 'notionPropSavedDate', label: '保存日期', required: false, expectedType: 'date' },
-    { configKey: 'notionPropCommentCount', label: '评论数', required: false, expectedType: 'number' }
-  ];
+  const propMappings = getNotionPropertyMappings();
 
   const errors = [];
   const warnings = [];
